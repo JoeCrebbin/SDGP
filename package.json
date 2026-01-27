@@ -1,0 +1,22 @@
+{
+  "name": "sdgp",
+  "version": "1.0.0",
+  "description": "Systems development :D",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \\\"Error: no test specified\\\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoeCrebbin/SDGP.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JoeCrebbin/SDGP/issues"
+  },
+  "homepage": "https://github.com/JoeCrebbin/SDGP#readme",
+  "devDependencies": {
+    "electron": "^40.0.0"
+  }
+}
