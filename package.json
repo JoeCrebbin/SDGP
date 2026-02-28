@@ -18,6 +18,11 @@
   },
   "homepage": "https://github.com/JoeCrebbin/SDGP#readme",
   "devDependencies": {
-    "electron": "^40.0.0"
+    "electron": "^40.0.0",
+    "electron-rebuild": "^3.2.9"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2"
   }
 }
