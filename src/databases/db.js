@@ -10,9 +10,10 @@ const db = new Database(dbPath, { verbose: console.log });
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
+        email TEXT UNIQUE,
         password_hash TEXT,
-        is_admin INTEGER DEFAULT 0
+        is_admin INTEGER DEFAULT 0,
+        is_approved INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS batches (
@@ -45,11 +46,11 @@ const adminPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSk
 const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K'; // bcrypt hash for "password"
 
 const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (username, password_hash, is_admin)
-    VALUES (?, ?, ?)
+    INSERT OR IGNORE INTO users (email, password_hash, is_admin, is_approved)
+    VALUES (?, ?, ?, 1)
 `)
 
-insertUser.run('admin', adminPasswordHash, 1); // Insert admin - username: admin, password: password
-insertUser.run('ja2-colman', userPasswordHash, 0); // Insert unprivileged user - username: ja2-colman, password: password
+insertUser.run('admin@grantvessels.com', adminPasswordHash, 1); // Insert admin - email: admin@grantvessels.com, password: password
+insertUser.run('ja2-colman@grantvessels.com', userPasswordHash, 0); // Insert unprivileged user - email: ja2-colman@grantvessels.com, password: password
 
 module.exports = db;
