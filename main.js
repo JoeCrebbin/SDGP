@@ -3,6 +3,10 @@ const db = require('./src/databases/db.js');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 
+if (!process.versions || !process.versions.electron) {
+  throw new Error('main.js must be run with Electron. Use "npm.cmd start" (PowerShell) or "npm start".');
+}
+
 let loggedInUserID = null;
 
 // Check if the user is admin
