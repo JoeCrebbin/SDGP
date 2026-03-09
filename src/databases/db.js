@@ -51,6 +51,6 @@ const insertUser = db.prepare(`
 `)
 
 insertUser.run('admin@grantvessels.com', adminPasswordHash, 1); // Insert admin - email: admin@grantvessels.com, password: password
-insertUser.run('ja2-colman@grantvessels.com', userPasswordHash, 0); // Insert unprivileged user - email: ja2-colman@grantvessels.com, password: password
+insertUser.run('user@grantvessels.com', userPasswordHash, 0); // Insert unprivileged user - email: ja2-colman@grantvessels.com, password: password
 
 module.exports = db;
