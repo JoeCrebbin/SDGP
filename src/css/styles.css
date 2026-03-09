@@ -1,0 +1,130 @@
+:root{
+    --bg: #f5f5f5;
+    --fg: #111111;
+    --muted: #666666;
+    --accent: #0078d4;
+    --accent-contrast: #ffffff;
+    --border: #cccccc;
+    --sidenav-bg: #ffffff;
+    --sidenav-width: 200px;
+}
+
+/* High-contrast overrides applied when `.high-contrast` is present on the documentElement */
+.high-contrast{
+    --bg: #000000;
+    --fg: #ffffff;
+    --muted: #ffffff;
+    --accent: #ffff00;
+    --accent-contrast: #000000;
+    --border: #ffffff;
+    --sidenav-bg: #000000;
+}
+
+/* Respect user's system preference for more contrast */
+@media (prefers-contrast: more){
+    :root{
+        --bg: #000000;
+        --fg: #ffffff;
+        --muted: #ffffff;
+        --accent: #ffff00;
+        --accent-contrast: #000000;
+        --border: #ffffff;
+        --sidenav-bg: #000000;
+    }
+}
+
+html, body{
+    height: 100%;
+}
+
+body{
+    background-color: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    margin: 0;
+}
+/* padding for main content div to avoid being hidden under fixed sidenav */
+#main-content{
+    margin-left: var(--sidenav-width);
+    padding: 20px;
+}
+
+/* Sidenav styles (uses variables so contrast mode propagates automatically) */
+.sidenav{
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidenav-width);
+    background: var(--sidenav-bg);
+    color: var(--fg);
+    padding: 16px;
+    box-sizing: border-box;
+    border-right: 1px solid var(--border);
+}
+
+.sidenav h3{
+    margin: 0 0 8px 0;
+}
+
+.sidenav a{
+    display: block;
+    color: inherit;
+    text-decoration: none;
+    padding: 6px 4px;
+    border-radius: 4px;
+}
+
+.sidenav a:hover{
+    background: var(--accent);
+    color: var(--accent-contrast);
+}
+
+.sidenav-label{
+    margin-top: 8px;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.contrast-toggle{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin:8px 0;
+}
+
+#contrast-toggle-btn{
+    background: transparent;
+    color: inherit;
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* Strong focus outlines for keyboard users */
+a:focus, button:focus, input:focus, select:focus{
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Simple button styles used in pages */
+.primary-btn{
+    background: var(--accent);
+    color: var(--accent-contrast);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.secondary-btn{
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+small{ color: var(--muted); }
