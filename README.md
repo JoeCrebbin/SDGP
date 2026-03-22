@@ -14,7 +14,7 @@ Built for the SDGP 2025-26 module (UFCF7S-30-2) at UWE Bristol.
 - **User authentication** with admin approval workflow
 - **Admin panel**: user management, system logs, global settings, all-batches view
 - **High contrast mode** for accessibility
-- **Offline-first** — no internet connection required
+- **Offline-first** - no internet connection required
 
 ## Default Beam Sizes
 
