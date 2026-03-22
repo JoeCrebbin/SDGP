@@ -84,8 +84,8 @@ output/                        Generated CSV output files
 
 ## Tech Stack
 
-- **Electron** — cross-platform desktop runtime
-- **better-sqlite3** — embedded SQLite database
-- **bcryptjs** — password hashing
-- **Chart.js** — client-side charting
-- **Worker Threads** — non-blocking optimisation
+- **Electron** - cross-platform desktop runtime
+- **better-sqlite3** - embedded SQLite database
+- **bcryptjs** - password hashing
+- **Chart.js** - client-side charting
+- **Worker Threads** - non-blocking optimisation
