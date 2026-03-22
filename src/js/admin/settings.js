@@ -39,6 +39,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             max_beams_display: maxBeamsInput.value
         };
 
+        // Validate: min remnant must be at least the kerf width
+        const kerf = parseFloat(settings.default_kerf_mm) || 0;
+        const remnant = parseFloat(settings.default_min_remnant_mm) || 0;
+        if (remnant < kerf) {
+            msg.textContent = `Minimum reusable length (${remnant}mm) cannot be shorter than the saw blade width (${kerf}mm).`;
+            msg.style.color = 'var(--danger)';
+            return;
+        }
+
         saveBtn.disabled = true;
         msg.textContent = 'Saving...';
         msg.style.color = '';

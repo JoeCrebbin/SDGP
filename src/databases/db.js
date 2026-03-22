@@ -113,7 +113,7 @@ insertUser.run('user@grantvessels.com', userPasswordHash, 0);
 // These provide initial values for the dashboard optimisation parameters
 const insertSetting = db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
 insertSetting.run('default_kerf_mm', '3.0');           // Saw blade width
-insertSetting.run('default_min_remnant_mm', '500');     // Minimum usable leftover
+insertSetting.run('default_min_remnant_mm', '3');     // Minimum usable leftover
 insertSetting.run('max_beams_display', '50');            // Max beams shown in cutting layout
 
 module.exports = db;

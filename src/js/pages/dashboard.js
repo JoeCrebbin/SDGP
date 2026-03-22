@@ -84,7 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const units = document.getElementById('units').value;
         const kerfMm = parseFloat(document.getElementById('kerf').value) || 3.0;
         const minRemnantMm = parseFloat(document.getElementById('min-remnant').value) || 500;
-        const priority = document.getElementById('priority').value; // 'waste' or 'speed'
 
         // Get the column index mappings (which CSV column maps to which field)
         const mapId = document.getElementById('map-id').value;
@@ -96,6 +95,14 @@ document.addEventListener('DOMContentLoaded', () => {
         // Validate required mappings (material group is optional)
         if (!mapId || !mapLength || !mapTotalLength) { msg.textContent = 'Please map Component ID, Length, and Raw Beam Size.'; msg.style.color = 'var(--danger)'; return; }
         if (!batchName) { msg.textContent = 'Please enter a batch name.'; msg.style.color = 'var(--danger)'; return; }
+
+        // Min remnant must be at least the kerf width - a remnant shorter than the
+        // saw blade is physically unusable
+        if (minRemnantMm < kerfMm) {
+            msg.textContent = `Minimum reusable length (${minRemnantMm}mm) cannot be shorter than the saw blade width (${kerfMm}mm).`;
+            msg.style.color = 'var(--danger)';
+            return;
+        }
 
         // Convert units to mm (all internal calculations use millimetres)
         const toMm = { mm: 1, cm: 10, m: 1000 };
@@ -126,16 +133,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (components.length === 0) { msg.textContent = 'No valid components found. Check your column mappings.'; msg.style.color = 'var(--danger)'; return; }
 
         // Show loading state and disable the button to prevent double-clicks
-        msg.textContent = `Running optimisation (${priority === 'speed' ? 'fastest cutting' : 'minimum waste'}) on ${components.length} components...`;
+        msg.textContent = `Running optimisation on ${components.length} components...`;
         msg.style.color = '';
         submitBtn.disabled = true;
 
         try {
             // Call the main process to run the algorithm in a worker thread
-            const response = await window.optimiseAPI.run({ batchName, components, kerfMm, minRemnantMm, oldWasteData, priority });
+            const response = await window.optimiseAPI.run({ batchName, components, kerfMm, minRemnantMm, oldWasteData });
             if (response.success) {
                 displayResults(response.result);
-                msg.textContent = `Optimisation complete! Solver: ${response.result.solver || priority}`;
+                msg.textContent = `Optimisation complete! Solver: ${response.result.solver}`;
                 msg.style.color = 'var(--success)';
             } else {
                 msg.textContent = response.message || 'Optimisation failed.';
@@ -168,15 +175,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="stat-label">Beams Used</p>
                 </div>
                 <div class="stat-card">
-                    <p class="stat-value">${formatMm(result.grandTotalStockMm)}</p>
+                    <p class="stat-value">${result.grandTotalStockMm.toLocaleString()} mm</p>
                     <p class="stat-label">Total Stock</p>
                 </div>
                 <div class="stat-card">
-                    <p class="stat-value">${formatMm(result.grandTotalCutMm)}</p>
+                    <p class="stat-value">${result.grandTotalCutMm.toLocaleString()} mm</p>
                     <p class="stat-label">Material Cut</p>
                 </div>
                 <div class="stat-card">
-                    <p class="stat-value">${formatMm(result.grandTotalWasteMm)}</p>
+                    <p class="stat-value">${result.grandTotalWasteMm.toLocaleString()} mm</p>
                     <p class="stat-label">Total Waste</p>
                 </div>
                 <div class="stat-card">

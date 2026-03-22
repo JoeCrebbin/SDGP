@@ -178,13 +178,13 @@ ipcMain.handle('auth:register', async (event, { email, password }) => {
 // a reference in the database.
 // ============================================================
 
-ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, minRemnantMm, oldWasteData, priority }) => {
+ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, minRemnantMm, oldWasteData }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     if (!components || components.length === 0) return { success: false, message: 'No components provided' };
 
-    // Run the algorithm in a worker thread (priority = 'waste' for BFD, 'speed' for FFD)
-    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: priority || 'waste' });
+    // Run the BFD algorithm in a worker thread
+    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: 'waste' });
 
     // Build the output CSV with one row per component, showing which beam it was assigned to
     const csvRows = ['ItemNumber,NestID,Length_mm,AssignedBeam_mm,BeamIndex,WasteOnBeam_mm,OldWaste_mm'];

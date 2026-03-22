@@ -7,13 +7,16 @@
  * minimise waste (or minimise the number of beams used).
  *
  * Two strategies are implemented:
- *   - Best-Fit Decreasing (BFD): picks the smallest suitable beam and the
- *     tightest fit for each component. Minimises material waste.
- *   - First-Fit Decreasing (FFD): picks the largest beam and places components
- *     into the first beam that fits. Minimises number of beams / cutting time.
+ *   - Best-Fit Decreasing (BFD): for each component, searches ALL existing beams
+ *     and picks the one with the LEAST remaining space (tightest fit).
+ *     This careful placement minimises leftover waste.
+ *   - First-Fit Decreasing (FFD): for each component, takes the FIRST beam that
+ *     fits without searching further. Faster to compute, slightly more waste.
  *
- * Both algorithms sort components largest-first (decreasing order) before packing,
- * which is a well-known heuristic for bin-packing problems.
+ * Both algorithms:
+ *   - Sort components largest-first (decreasing order) before packing
+ *   - Use the largest available stock length when opening new beams
+ *   - Account for kerf (saw blade width) on each cut
  */
 
 /**
@@ -57,11 +60,12 @@ function pickLargestStockLength(stockLengths, requiredMm) {
  * Best-Fit Decreasing (BFD) - Minimises waste.
  *
  * For each component (sorted largest first):
- *   1. Look through all existing beams
+ *   1. Look through ALL existing beams
  *   2. Find the one with the LEAST remaining space that still fits the component
- *   3. If no beam fits, open a new beam using the smallest suitable stock length
+ *   3. If no beam fits, open a new beam using the largest available stock length
  *
- * This "best fit" approach packs beams as tightly as possible, reducing leftover waste.
+ * The key difference from FFD is the placement strategy: BFD searches every beam
+ * to find the tightest fit, which packs beams more efficiently and reduces waste.
  *
  * @param {Object[]} components - Array of {itemNumber, lengthMm, nestId, ...}
  * @param {number[]} stockLengths - Available beam lengths in mm
@@ -77,7 +81,7 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
     let bestIdx = -1;
     let bestRemaining = null;
 
-    // Search all existing beams for the tightest fit
+    // Search ALL existing beams for the tightest fit
     for (let i = 0; i < beams.length; i++) {
       const beam = beams[i];
       const additional = comp.lengthMm + kerfMm; // Component length + saw blade width
@@ -91,10 +95,11 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
       }
     }
 
-    // No existing beam fits - open a new one with the smallest suitable stock
+    // No existing beam fits - open a new one with the largest available stock
+    // (both BFD and FFD use large beams; the difference is in placement strategy)
     if (bestIdx === -1) {
       const required = comp.lengthMm + kerfMm;
-      const L = pickStockLength(stockLengths, required);
+      const L = pickLargestStockLength(stockLengths, required);
       beams.push({ stockLengthMm: L, components: [], usedMm: 0, wasteMm: 0 });
       bestIdx = beams.length - 1;
     }
@@ -182,10 +187,10 @@ function packFirstFitDecreasing(components, stockLengths, kerfMm) {
  * @param {string} params.priority - 'waste' for BFD or 'speed' for FFD
  * @returns {Object} Full results including per-nest breakdowns and grand totals
  */
-function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority }) {
-  // Choose the algorithm based on user's priority selection
-  const packFn = priority === 'speed' ? packFirstFitDecreasing : packBestFitDecreasing;
-  const solverName = priority === 'speed' ? 'First-Fit Decreasing (Speed)' : 'Best-Fit Decreasing (Min Waste)';
+function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
+  // Always use Best-Fit Decreasing — it searches all beams for the tightest fit
+  const packFn = packBestFitDecreasing;
+  const solverName = 'Best-Fit Decreasing (Min Waste)';
 
   // Group components by nestId (material type)
   const groups = {};
