@@ -7,9 +7,7 @@ Built for the SDGP 2025-26 module (UFCF7S-30-2) at UWE Bristol.
 ## Features
 
 - **CSV Import** with configurable column mapping and unit conversion (mm, cm, m)
-- **Two optimisation algorithms**:
-  - Best-Fit Decreasing (BFD) — minimises material waste
-  - First-Fit Decreasing (FFD) — minimises beam count / cutting time
+- **Optimisation algorithm**: Best-Fit Decreasing (BFD) - minimises material waste
 - **Visual cutting layout** showing colour-coded component segments on each beam, with waste highlighted
 - **Waste comparison charts** (bar, pie, doughnut, per-nest) with PDF export
 - **Batch history** with search, CSV download, and chart replay
@@ -44,14 +42,6 @@ The `postinstall` script automatically rebuilds native modules (better-sqlite3) 
 ```bash
 npm start
 ```
-
-### Testing
-
-```bash
-npm test
-```
-
-Runs 35 unit tests covering both optimisation algorithms, stock length selection, edge cases, and the case study beam sizes.
 
 ## Default Accounts
 
@@ -89,8 +79,6 @@ src/
   html/                        All application pages
   css/styles.css               Theming, layout, cutting layout styles
   databases/db.js              SQLite schema, migrations, seed data
-test/
-  optimiser.test.js            Unit tests (35 tests)
 output/                        Generated CSV output files
 ```
 
