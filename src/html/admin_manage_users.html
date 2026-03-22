@@ -8,7 +8,52 @@
     <div id="sidenav-container"></div>
     <div id="main-content">
       <h1>Manage Users</h1>
+      <p>Approve, reject or remove user accounts.</p>
+
+      <div class="card" id="pending-section">
+        <h3 style="margin-top:0;">Pending Approval</h3>
+        <table>
+          <thead>
+            <tr><th>Email</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="pending-body">
+            <tr><td colspan="2">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0;">All Users</h3>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="users-body">
+            <tr><td colspan="5">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="message" id="admin-message"></p>
+
+      <section id="user-batches-section" style="display:none;">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h3 style="margin:0;" id="user-batches-title">User Batches</h3>
+            <button class="secondary-btn" id="close-user-batches">Close</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>Batch Name</th><th>Waste %</th><th>Date</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="user-batches-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="batch-detail-section" style="display:none;"></section>
     </div>
-    <script src="../js/sidenav.js"></script>
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/admin/users.js"></script>
   </body>
 </html>

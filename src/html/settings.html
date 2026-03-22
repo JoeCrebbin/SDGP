@@ -8,18 +8,37 @@
     <div id="sidenav-container"></div>
     <div id="main-content">
       <h1>My Settings</h1>
-      <hr>
-      <p>Change Password</p>
-      <input type="password" id="current-password" placeholder="Current Password..."><br>
-      <input type="password" id="new-password" placeholder="New Password..."><br>
-      <input type="password" id="confirm-password" placeholder="Confirm New Password..."><br>
-      <button onclick="handleChangePassword()">Change Password</button><br>
-      <p id="message"></p><br>
-      <hr>
-      <p>Delete Account</p>
-      <input type="password" id="delete-password" placeholder="Enter Password to Confirm..." style="color: red;"><br>
-      <button onclick="handleDeleteAccount()" style="color: red;">Delete Account</button>
+
+      <div class="card">
+        <h3 style="margin-top:0;">Change Password</h3>
+        <div class="form-group">
+          <label for="current-password">Current Password</label>
+          <input type="password" id="current-password" placeholder="Enter current password">
+        </div>
+        <div class="form-group">
+          <label for="new-password">New Password</label>
+          <input type="password" id="new-password" placeholder="Choose a new password">
+        </div>
+        <div class="form-group">
+          <label for="confirm-password">Confirm New Password</label>
+          <input type="password" id="confirm-password" placeholder="Re-enter new password">
+        </div>
+        <button id="btn-change-password" class="primary-btn">Change Password</button>
+        <p class="message" id="password-message"></p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0; color: var(--danger);">Delete Account</h3>
+        <p><small>This action is permanent and cannot be undone. All your data will be removed.</small></p>
+        <div class="form-group">
+          <label for="delete-password">Confirm Password</label>
+          <input type="password" id="delete-password" placeholder="Enter your password to confirm">
+        </div>
+        <button id="btn-delete-account" class="danger-btn">Delete Account</button>
+        <p class="message" id="delete-message"></p>
+      </div>
     </div>
-    <script src="../js/sidenav.js"></script>
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/pages/settings.js"></script>
   </body>
 </html>

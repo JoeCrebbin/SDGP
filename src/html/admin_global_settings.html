@@ -8,7 +8,31 @@
     <div id="sidenav-container"></div>
     <div id="main-content">
       <h1>Global Settings</h1>
+      <p>Configure application-wide defaults.</p>
+
+      <div class="card">
+        <div class="mapping-grid">
+          <div class="form-group">
+            <label for="setting-kerf">Default Saw Blade Width (mm)</label>
+            <input type="number" id="setting-kerf" step="0.1" min="0">
+            <small>Pre-filled on the dashboard for new optimisations.</small>
+          </div>
+          <div class="form-group">
+            <label for="setting-remnant">Default Minimum Reusable Length (mm)</label>
+            <input type="number" id="setting-remnant" min="0">
+            <small>Pieces shorter than this are logged as waste.</small>
+          </div>
+          <div class="form-group">
+            <label for="setting-max-beams">Max Beams to Display in Layout</label>
+            <input type="number" id="setting-max-beams" min="10" max="500">
+            <small>Limits the cutting layout visualisation for performance.</small>
+          </div>
+        </div>
+        <button class="primary-btn" id="save-settings-btn" style="margin-top:12px;">Save Settings</button>
+        <p class="message" id="settings-message"></p>
+      </div>
     </div>
-    <script src="../js/sidenav.js"></script>
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/admin/settings.js"></script>
   </body>
 </html>
