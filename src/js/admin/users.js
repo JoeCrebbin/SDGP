@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pendingBody = document.getElementById('pending-body');
     const usersBody = document.getElementById('users-body');
     const msg = document.getElementById('admin-message');
+    const allUsersTitle = document.getElementById('all-users-title');
 
     // fetch all users and populate both tables - pending approvals and all users
     async function loadUsers() {
@@ -23,6 +24,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const pending = response.users.filter(u => u.is_approved === 0);
             const all = response.users;
+
+            if (allUsersTitle) {
+                allUsersTitle.textContent = `All Users (${all.length})`;
+            }
 
             // pending approvals table
             if (pending.length === 0) {
