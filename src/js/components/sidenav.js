@@ -1,31 +1,30 @@
 /*
- * sidenav.js - Sidebar Navigation Component
+ * sidenav.js - Sidebar Navigation
+ * SDGP 2025/26
  *
- * This is a shared component loaded on every authenticated page.
- * It dynamically builds the sidebar navigation, including:
- *   - Standard links (Dashboard, History, Settings)
- *   - Admin-only links (User Management, Logs, etc.) - only shown if user is admin
- *   - High contrast toggle (saved in localStorage for persistence)
- *   - Logout button
+ * Shared component thats loaded on every page (except login/register).
+ * Builds the sidebar with nav links, admin-only links if youre an admin,
+ * a high contrast toggle, and the logout button.
  *
- * It also acts as an auth guard - if the user isn't logged in,
- * they get redirected to the login page.
+ * Also acts as an auth guard - if youre not logged in you get
+ * kicked back to the login page. It works really well as a simple
+ * way to protect all the pages.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
     const sidenavContainer = document.getElementById('sidenav-container');
     if (!sidenavContainer) return;
 
-    // Check if user is authenticated before rendering the page
+    // check if the user is logged in
     const userStatus = await window.authAPI.checkAuth();
 
-    // If not logged in, redirect to the login page
+    // not logged in? back to login you go
     if (!userStatus.authenticated) {
         window.location.href = './index.html';
         return;
     }
 
-    // Build the sidebar HTML - standard links first
+    // build the sidebar HTML
     let sidenavHTML = `
         <div class="sidenav">
             <h3>Grant Vessels</h3>
@@ -35,7 +34,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <a href="./settings.html">My Settings</a>
     `;
 
-    // Only show admin controls if the user has admin privileges
+    // only show admin stuff if theyre actually an admin
     if (userStatus.isAdmin) {
         sidenavHTML += `
             <p class="sidenav-label">Admin Controls</p>
@@ -46,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
     }
 
-    // Bottom section - contrast toggle and logout (pushed down with flex spacer)
+    // bottom section - contrast toggle and logout
     sidenavHTML += `
             <div class="sidenav-spacer"></div>
             <div class="contrast-toggle">
@@ -60,13 +59,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     sidenavContainer.innerHTML = sidenavHTML;
 
-    // ---- High Contrast Toggle ----
-    // Uses localStorage so the setting persists between pages and sessions
+    // high contrast toggle - saves to localStorage so it sticks between pages
     const contrastBtn = document.getElementById('contrast-toggle-btn');
     const STORAGE_KEY = 'highContrast';
 
     function setHighContrast(enabled){
-        // Toggle the CSS class on the root element (switches CSS variables)
         if(enabled) document.documentElement.classList.add('high-contrast');
         else document.documentElement.classList.remove('high-contrast');
         if(contrastBtn){
@@ -76,21 +73,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         try{ localStorage.setItem(STORAGE_KEY, enabled ? 'true' : 'false'); } catch(e){}
     }
 
-    // Load saved preference on page load, or detect OS preference
+    // load saved preference or use OS preference as fallback
     (function initContrast(){
         let stored = null;
         try{ stored = localStorage.getItem(STORAGE_KEY); } catch(e){}
         if(stored === 'true' || stored === 'false'){
             setHighContrast(stored === 'true');
         } else if(window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches){
-            // Respect OS-level high contrast preference if no saved setting
             setHighContrast(true);
         } else {
             setHighContrast(false);
         }
     })();
 
-    // Toggle on click
     if(contrastBtn){
         contrastBtn.addEventListener('click', () => {
             const isOn = contrastBtn.getAttribute('aria-pressed') === 'true';
@@ -98,8 +93,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // ---- Logout ----
-    // Clears server-side session and redirects to login
+    // logout - clear session and redirect
     document.getElementById('logout-link').addEventListener('click', async () => {
         await window.authAPI.logout();
         sessionStorage.clear();

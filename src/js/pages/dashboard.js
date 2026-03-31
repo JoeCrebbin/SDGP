@@ -1,16 +1,18 @@
 /*
- * dashboard.js - Main Dashboard Page Handler
+ * dashboard.js - Main Dashboard Page
+ * SDGP 2025/26
  *
- * This is the largest page handler. It manages:
- *   1. CSV file upload and column mapping
- *   2. Running the optimisation algorithm
- *   3. Displaying results: summary stats, cutting layout, CSV viewer, and charts
+ * This is the biggest page handler in the app. Handles everything from
+ * uploading the CSV to showing the results. The flow goes:
+ * Upload CSV -> Inspect headers -> Map columns -> Run optimiser -> Show results
  *
- * The flow is: Upload CSV -> Inspect headers -> Map columns -> Run optimisation -> Show results
+ * The results section shows stat cards, a visual cutting layout with
+ * coloured bars for each beam, a CSV data table, and charts.
+ * We were pretty proud of how the cutting layout turned out tbh.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Get references to key DOM elements
+    // grab all the DOM elements we need
     const fileInput = document.getElementById('csv-file');
     const inspectBtn = document.getElementById('inspect-btn');
     const settingsSection = document.getElementById('optimisation-settings');
@@ -19,10 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('btn-submit');
     const resultsSection = document.getElementById('results-section');
 
-    let csvContent = null; // Stores the raw CSV text after file is read
+    let csvContent = null; // raw CSV text after file is read
 
-    // ---- Load Global Settings Defaults ----
-    // Pre-fill kerf and min remnant from admin-configured global settings
+    // prefill kerf and min remnant from global settings if they exist
     (async () => {
         try {
             const res = await window.settingsAPI.getDefaults();
@@ -32,11 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (res.settings.default_kerf_mm) kerfInput.value = res.settings.default_kerf_mm;
                 if (res.settings.default_min_remnant_mm) remnantInput.value = res.settings.default_min_remnant_mm;
             }
-        } catch (e) { /* If settings fail to load, just use the HTML default values */ }
+        } catch (e) { /* just use the defaults from the HTML if this fails */ }
     })();
 
-    // ---- File Selection ----
-    // Enable the inspect button when a file is chosen
+    // enable inspect button when a file is picked
     fileInput.addEventListener('change', () => {
         if (fileInput.files.length > 0) {
             inspectBtn.disabled = false;
@@ -45,18 +45,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ---- CSV Inspection ----
-    // Read the file, extract column headers, and populate the mapping dropdowns
+    // read the CSV, pull out the headers, and fill in the mapping dropdowns
     inspectBtn.addEventListener('click', () => {
         const file = fileInput.files[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             csvContent = e.target.result;
-            // Parse the first line to get column names
             const firstline = csvContent.split('\n')[0];
             const columns = firstline.split(',').map(col => col.trim());
-            // Populate each mapping dropdown with the CSV column names
+            // fill each dropdown with the column names from the CSV
             mappingSelects.forEach(select => {
                 select.innerHTML = '<option value="">-- Select Column --</option>';
                 columns.forEach((col, index) => {
@@ -66,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     select.appendChild(option);
                 });
             });
-            settingsSection.style.display = 'block'; // Show the settings panel
+            settingsSection.style.display = 'block';
             msg.textContent = 'File inspected. Configure settings below.';
             msg.style.color = 'var(--success)';
         };
@@ -74,43 +72,40 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    // ---- Run Optimisation ----
+    // run the optimisation when they click the button
     submitBtn.addEventListener('click', async () => {
         if (!csvContent) { msg.textContent = 'Please inspect a file first.'; msg.style.color = 'var(--danger)'; return; }
 
-        // Gather all user inputs
+        // gather all the user inputs
         const batchName = document.getElementById('batch-name').value.trim();
         const hasHeaders = document.getElementById('has-headers').checked;
         const units = document.getElementById('units').value;
         const kerfMm = parseFloat(document.getElementById('kerf').value) || 3.0;
         const minRemnantMm = parseFloat(document.getElementById('min-remnant').value) || 500;
 
-        // Get the column index mappings (which CSV column maps to which field)
+        // which CSV columns map to which fields
         const mapId = document.getElementById('map-id').value;
         const mapLength = document.getElementById('map-length').value;
         const mapTotalLength = document.getElementById('map-total-length').value;
-        const mapMaterial = document.getElementById('map-material').value;
         const mapOldWaste = document.getElementById('map-old-waste').value;
 
-        // Validate required mappings (material group is optional)
         if (!mapId || !mapLength || !mapTotalLength) { msg.textContent = 'Please map Component ID, Length, and Raw Beam Size.'; msg.style.color = 'var(--danger)'; return; }
         if (!batchName) { msg.textContent = 'Please enter a batch name.'; msg.style.color = 'var(--danger)'; return; }
 
-        // Min remnant must be at least the kerf width - a remnant shorter than the
-        // saw blade is physically unusable
+        // cant have a remnant shorter than the saw blade - makes no sense physically
         if (minRemnantMm < kerfMm) {
             msg.textContent = `Minimum reusable length (${minRemnantMm}mm) cannot be shorter than the saw blade width (${kerfMm}mm).`;
             msg.style.color = 'var(--danger)';
             return;
         }
 
-        // Convert units to mm (all internal calculations use millimetres)
+        // convert everything to mm internally
         const toMm = { mm: 1, cm: 10, m: 1000 };
         const multiplier = toMm[units] || 1;
 
-        // Parse CSV rows into component objects
+        // parse the CSV rows into component objects
         const lines = csvContent.split('\n').filter(line => line.trim() !== '');
-        const startRow = hasHeaders ? 1 : 0; // Skip header row if present
+        const startRow = hasHeaders ? 1 : 0;
         const components = [];
         const oldWasteData = {};
 
@@ -119,11 +114,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemNumber = cols[parseInt(mapId)] || '';
             const rawLength = parseFloat(cols[parseInt(mapLength)]);
             const rawBeamType = parseFloat(cols[parseInt(mapTotalLength)]);
-            // If material group is mapped, use it to group components; otherwise all go in one group
-            const nestId = mapMaterial ? (cols[parseInt(mapMaterial)] || 'default') : 'all';
-            if (!itemNumber || isNaN(rawLength) || rawLength <= 0) continue; // Skip invalid rows
+            const nestId = 'all';
+            if (!itemNumber || isNaN(rawLength) || rawLength <= 0) continue;
             components.push({ itemNumber, lengthMm: rawLength * multiplier, beamType: isNaN(rawBeamType) ? 0 : rawBeamType * multiplier, nestId });
-            // If an old waste column is mapped, store it for comparison charts
+            // store old waste values if that column was mapped (for comparison charts)
             if (mapOldWaste !== '') {
                 const oldVal = parseFloat(cols[parseInt(mapOldWaste)]);
                 if (!isNaN(oldVal)) oldWasteData[itemNumber] = oldVal * multiplier;
@@ -132,13 +126,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (components.length === 0) { msg.textContent = 'No valid components found. Check your column mappings.'; msg.style.color = 'var(--danger)'; return; }
 
-        // Show loading state and disable the button to prevent double-clicks
+        // show loading state and disable button so they dont click twice
         msg.textContent = `Running optimisation on ${components.length} components...`;
         msg.style.color = '';
         submitBtn.disabled = true;
 
         try {
-            // Call the main process to run the algorithm in a worker thread
+            // send it to main.js which runs the algorithm in a worker thread
             const response = await window.optimiseAPI.run({ batchName, components, kerfMm, minRemnantMm, oldWasteData });
             if (response.success) {
                 displayResults(response.result);
@@ -158,15 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ============================================================
-    // Results Display
-    // Called after a successful optimisation. Renders all result sections.
-    // ============================================================
+  
+    // Results display - renders everything after a successful run
 
     function displayResults(result) {
         resultsSection.style.display = 'block';
         resultsSection.innerHTML = '';
 
-        // Summary stats cards (beams used, total stock, waste, etc.)
+        // summary stat cards at the top
         resultsSection.insertAdjacentHTML('beforeend', `
             <h3>Results: ${escapeHtml(result.batchName)} <small style="font-weight:400;">(${escapeHtml(result.solver || '')})</small></h3>
             <div class="stats-row">
@@ -193,54 +186,58 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `);
 
-        // Visual cutting layout (coloured bars showing components on beams)
+        // visual cutting layout - the coloured bars showing whats on each beam
         resultsSection.insertAdjacentHTML('beforeend', buildBeamLayout(result));
         wireBeamLayoutControls(result);
 
-        // Scrollable CSV data table with download button
+        // scrollable CSV table
         if (result.csvContent) {
             resultsSection.insertAdjacentHTML('beforeend', buildCsvViewer(result.csvContent, result.batchName));
         }
 
-        // Waste comparison charts (bar, pie, doughnut, per-nest)
+        // charts - bar chart for waste comparison and pie for utilisation
         const chartData = parseChartData(result);
+        const safeBatch = result.batchName.replace(/[^a-zA-Z0-9_-]/g, '_');
         resultsSection.insertAdjacentHTML('beforeend', `
             <div class="card">
-                <h3 style="margin-top:0;">Waste Comparison</h3>
-                <div class="chart-controls">
-                    <label for="chart-type" style="font-size:13px; font-weight:500;">Chart type:</label>
-                    <select id="chart-type" style="width:auto;">
-                        <option value="overview-bar">Overall Comparison (mm)</option>
-                        <option value="overview-pie">Material Utilisation (Pie)</option>
-                        <option value="overview-doughnut">Material Utilisation (Doughnut)</option>
-                        <option value="nest-bar">Per-Nest Waste (Top 15)</option>
-                    </select>
-                    <button class="secondary-btn" id="btn-download-chart-pdf">Download Chart as PDF</button>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h3 style="margin:0;">Waste Comparison</h3>
+                    <button class="secondary-btn" id="btn-dl-chart-bar">Download Chart</button>
                 </div>
                 <div class="chart-container" style="height:360px;">
-                    <canvas id="waste-chart"></canvas>
+                    <canvas id="chart-bar"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h3 style="margin:0;">Material Utilisation</h3>
+                    <button class="secondary-btn" id="btn-dl-chart-pie">Download Chart</button>
+                </div>
+                <div class="chart-container" style="height:360px;">
+                    <canvas id="chart-pie"></canvas>
                 </div>
             </div>
         `);
 
-        // Build the initial chart and wire up chart type switching
-        buildChart(chartData, 'waste-chart');
-        document.getElementById('chart-type').addEventListener('change', () => buildChart(chartData, 'waste-chart'));
-        document.getElementById('btn-download-chart-pdf').addEventListener('click', () => downloadChartAsPdf('waste-chart'));
+        buildSingleChart(chartData, 'chart-bar', 'overview-bar');
+        buildSingleChart(chartData, 'chart-pie', 'overview-pie');
 
-        // Wire up CSV download button
+        // chart download buttons - saves as PNG through native dialog
+        document.getElementById('btn-dl-chart-bar').addEventListener('click', () => downloadChartAsPng('chart-bar', `${safeBatch}_waste_comparison.png`));
+        document.getElementById('btn-dl-chart-pie').addEventListener('click', () => downloadChartAsPng('chart-pie', `${safeBatch}_utilisation_pie.png`));
+
+        // CSV download button - also uses native save dialog
         const dlBtn = document.getElementById('btn-download-csv');
         if (dlBtn) dlBtn.addEventListener('click', () => downloadCsv(result.csvContent, result.batchName));
     }
 
     // ============================================================
-    // Cutting Layout Visualisation
-    // Renders coloured bars representing components packed on beams,
-    // similar to classic cutting stock diagrams.
-    // ============================================================
+  
+    // Cutting layout - coloured bars showing components on beams
+    // This is the bit that looks like a proper cutting stock diagram
 
     function buildBeamLayout(result) {
-        // Flatten all beams from all nests into a single array
+        // flatten all beams from all nests into one array
         const allBeams = [];
         const nestIds = [];
         for (const nest of result.results) {
@@ -251,35 +248,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (allBeams.length === 0) return '';
 
-        // Build dropdown options for filtering by nest (material type)
-        const uniqueNests = [...new Set(nestIds)].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
-        let nestOptions = '<option value="all">All Nests</option>';
-        for (const n of uniqueNests) {
-            nestOptions += `<option value="${escapeHtml(String(n))}">Nest ${escapeHtml(String(n))}</option>`;
-        }
-
         return `
             <div class="card">
-                <h3 style="margin-top:0;">Cutting Layout</h3>
-                <div class="beam-layout-controls">
-                    <label style="font-size:13px; font-weight:500;">Nest:</label>
-                    <select id="layout-nest-filter" style="width:auto;">${nestOptions}</select>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h3 style="margin:0;">Cutting Layout <small style="font-weight:400;">(${allBeams.length} beams)</small></h3>
                     <button class="secondary-btn" id="btn-download-layout">Download Layout as PDF</button>
-                    <small>Showing first 50 beams. ${allBeams.length} total.</small>
                 </div>
                 <div class="beam-layout" id="beam-layout-container">
-                    ${renderBeams(allBeams, nestIds, 'all', 50)}
+                    ${renderBeams(allBeams, nestIds, 'all', allBeams.length)}
                 </div>
             </div>
         `;
     }
 
-    /**
-     * Renders individual beam rows as coloured segments.
-     * Each component gets a colour from a 10-colour palette (cycles for >10 components).
-     * Waste is shown as a diagonal-striped segment at the end.
-     * Bar widths are proportional to the beam's stock length relative to the largest beam.
-     */
+    // renders each beam as a row of coloured segments
+    // uses a 10-colour palette that cycles for beams with loads of components
+    // waste shows up as a stripy segment at the end
     function renderBeams(allBeams, nestIds, filterNest, limit) {
         let html = '';
         let count = 0;
@@ -290,22 +274,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const beam = allBeams[i];
             count++;
 
-            // Build coloured segments for each component on this beam
             let segments = '';
             beam.components.forEach((comp, ci) => {
                 const widthPct = (comp.lengthMm / beam.stockLengthMm) * 100;
-                const colClass = `seg-c${ci % 10}`; // Cycle through 10 colours
-                const label = widthPct > 5 ? escapeHtml(comp.itemNumber) : ''; // Only show label if segment is wide enough
+                const colClass = `seg-c${ci % 10}`;
+                const label = widthPct > 5 ? escapeHtml(comp.itemNumber) : '';
                 segments += `<div class="beam-segment ${colClass}" style="width:${widthPct}%" title="${escapeHtml(comp.itemNumber)}: ${comp.lengthMm}mm">${label}</div>`;
             });
 
-            // Add waste segment at the end (diagonal stripe pattern)
+            // waste segment with diagonal stripes
             if (beam.wasteMm > 0) {
                 const wastePct = (beam.wasteMm / beam.stockLengthMm) * 100;
                 segments += `<div class="beam-segment beam-segment-waste" style="width:${wastePct}%" title="Waste: ${beam.wasteMm}mm">${wastePct > 5 ? 'waste' : ''}</div>`;
             }
 
-            // Scale bar width so the longest beam fills the full width
+            // scale bar width so the longest beam fills the whole row
             const barWidthPct = (beam.stockLengthMm / maxStock) * 100;
 
             html += `
@@ -322,45 +305,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     }
 
-    // Wire up nest filter dropdown and layout download button
+    // hook up the PDF download button for the cutting layout
     function wireBeamLayoutControls(result) {
-        const filter = document.getElementById('layout-nest-filter');
-        if (!filter) return;
-
-        // Rebuild the flat beam arrays for filtering
-        const allBeams = [];
-        const nestIds = [];
-        for (const nest of result.results) {
-            for (const beam of nest.beams) {
-                allBeams.push(beam);
-                nestIds.push(nest.nestId);
-            }
-        }
-
-        // Re-render beams when nest filter changes
-        filter.addEventListener('change', () => {
-            const container = document.getElementById('beam-layout-container');
-            if (container) container.innerHTML = renderBeams(allBeams, nestIds, filter.value, 50);
-        });
-
         const dlLayoutBtn = document.getElementById('btn-download-layout');
         if (dlLayoutBtn) {
-            dlLayoutBtn.addEventListener('click', () => downloadLayoutAsPng());
+            dlLayoutBtn.addEventListener('click', () => downloadLayoutAsPdf(result.batchName));
         }
     }
 
-    /**
-     * Opens the cutting layout in a new print-ready window.
-     * The user can then use their browser's print dialog to save as PDF.
-     * We duplicate the CSS needed for the beam layout so it renders correctly.
-     */
-    function downloadLayoutAsPng() {
+    // opens all the beams in a new print-friendly window for PDF export
+    function downloadLayoutAsPdf(batchName) {
         const container = document.getElementById('beam-layout-container');
         if (!container) return;
         const html = container.innerHTML;
         const pw = window.open('', '_blank');
         if (!pw) { alert('Pop-up blocked.'); return; }
-        pw.document.write(`<!DOCTYPE html><html><head><title>Cutting Layout</title>
+        pw.document.write(`<!DOCTYPE html><html><head><title>Cutting Layout - ${escapeHtml(batchName)}</title>
 <style>
 body{margin:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;background:#fff;color:#111}
 .beam-row{display:flex;align-items:center;margin-bottom:6px;gap:8px}
@@ -374,7 +334,7 @@ body{margin:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 .seg-c5{background:#ec4899}.seg-c6{background:#06b6d4}.seg-c7{background:#84cc16}.seg-c8{background:#f97316}.seg-c9{background:#6366f1}
 @media print{button{display:none}}
 </style></head><body>
-<h2>Cutting Layout</h2>
+<h2>Cutting Layout - ${escapeHtml(batchName)}</h2>
 ${html}
 <br><button onclick="window.print()">Print / Save as PDF</button>
 </body></html>`);
@@ -382,14 +342,10 @@ ${html}
     }
 
     // ============================================================
-    // Chart Data & Rendering
-    // Uses Chart.js to display waste comparison in different formats.
-    // ============================================================
+  
+    // Charts - uses Chart.js for the waste comparison visuals
 
-    /**
-     * Parse the optimisation result into a format suitable for Chart.js.
-     * Extracts waste totals, per-nest breakdowns, and old waste data from the CSV.
-     */
+    // pull the data we need for charts out of the result object
     function parseChartData(result) {
         const data = {
             optimisedWasteMm: result.grandTotalWasteMm,
@@ -397,49 +353,31 @@ ${html}
             totalStockMm: result.grandTotalStockMm,
             totalWasteMm: result.grandTotalWasteMm,
             totalCutMm: result.grandTotalCutMm,
-            oldWasteMm: null, // Will be filled from CSV if old waste data exists
-            nests: []
+            oldWasteMm: null
         };
 
-        // Parse old waste from the CSV output (one entry per unique beam, not per component)
+        // try to get old waste from the CSV (for comparing against the previous cutting plan)
         if (result.csvContent) {
             const lines = result.csvContent.split('\n').filter(l => l.trim());
             if (lines.length > 1) {
                 const headers = lines[0].split(',');
                 const oldWasteIdx = headers.indexOf('OldWaste_mm');
                 const beamIndexIdx = headers.indexOf('BeamIndex');
-                const nestIdx = headers.indexOf('NestID');
-                const wasteIdx = headers.indexOf('WasteOnBeam_mm');
-                const beamIdx = headers.indexOf('AssignedBeam_mm');
-
                 let totalOldWaste = 0;
                 let hasAnyOld = false;
-                const oldWastePerBeam = {}; // Track max old waste per beam index
-
-                const nestMap = {};
+                const oldWastePerBeam = {};
 
                 for (let i = 1; i < lines.length; i++) {
                     const cells = lines[i].split(',');
                     const bi = cells[beamIndexIdx];
-                    const beamLen = parseFloat(cells[beamIdx]) || 0;
-                    const waste = parseFloat(cells[wasteIdx]) || 0;
                     const oldW = parseFloat(cells[oldWasteIdx]) || 0;
-                    const nid = cells[nestIdx] || '';
 
-                    // For old waste: take the max value per beam (avoids double-counting)
+                    // take the max per beam so we dont double count
                     if (oldW > 0) {
                         hasAnyOld = true;
                         if (!(bi in oldWastePerBeam) || oldW > oldWastePerBeam[bi]) {
                             oldWastePerBeam[bi] = oldW;
                         }
-                    }
-
-                    // Aggregate per-nest statistics (only count each beam once)
-                    if (!nestMap[nid]) nestMap[nid] = { stock: 0, waste: 0, beamsSeen: new Set() };
-                    if (!nestMap[nid].beamsSeen.has(bi)) {
-                        nestMap[nid].beamsSeen.add(bi);
-                        nestMap[nid].stock += beamLen;
-                        nestMap[nid].waste += waste;
                     }
                 }
 
@@ -447,31 +385,14 @@ ${html}
                     for (const v of Object.values(oldWastePerBeam)) totalOldWaste += v;
                     data.oldWasteMm = totalOldWaste;
                 }
-
-                // Build per-nest waste percentages for the nest bar chart
-                for (const [nid, nd] of Object.entries(nestMap)) {
-                    data.nests.push({ id: nid, wastePct: nd.stock > 0 ? (nd.waste / nd.stock) * 100 : 0 });
-                }
-                data.nests.sort((a, b) => b.wastePct - a.wastePct); // Sort by worst waste first
             }
-        }
-
-        // Fallback: use nest data directly from the result if CSV parsing didn't produce any
-        if (data.nests.length === 0 && result.results) {
-            for (const nest of result.results) data.nests.push({ id: nest.nestId, wastePct: nest.wastePct });
-            data.nests.sort((a, b) => b.wastePct - a.wastePct);
         }
 
         return data;
     }
 
-    let currentChart = null; // Track the current chart so we can destroy it before creating a new one
-
-    /**
-     * Custom Chart.js plugin to draw percentage labels outside pie/doughnut slices.
-     * This solves the problem of tiny waste segments being impossible to hover over.
-     * Calculates the position using polar coordinates (mid-angle of each arc).
-     */
+    // custom plugin to draw percentage labels outside pie slices
+    // took us a while to figure this out from the Chart.js docs
     const pieDataLabelsPlugin = {
         id: 'pieDataLabels',
         afterDraw(chart) {
@@ -486,7 +407,6 @@ ${html}
             ctx.textBaseline = 'middle';
             meta.data.forEach((element, i) => {
                 const pct = ((dataset.data[i] / total) * 100).toFixed(1);
-                // Calculate label position outside the slice
                 const midAngle = (element.startAngle + element.endAngle) / 2;
                 const outerRadius = element.outerRadius;
                 const x = element.x + Math.cos(midAngle) * (outerRadius + 20);
@@ -498,21 +418,14 @@ ${html}
         }
     };
 
-    /**
-     * Build a Chart.js chart based on the selected chart type.
-     * Destroys any existing chart first to avoid canvas reuse errors.
-     */
-    function buildChart(chartData, canvasId) {
-        const typeSelect = document.getElementById('chart-type');
-        const chartType = typeSelect ? typeSelect.value : 'overview-bar';
+    // builds a Chart.js chart on a given canvas element
+    function buildSingleChart(chartData, canvasId, chartType) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        if (currentChart) { currentChart.destroy(); currentChart = null; }
 
         let config;
 
         if (chartType === 'overview-bar') {
-            // Bar chart comparing optimised waste vs previous waste in absolute mm
             const labels = ['Waste (mm)'];
             const datasets = [{
                 label: 'Optimised Waste',
@@ -540,13 +453,12 @@ ${html}
                 }
             };
 
-        } else if (chartType === 'overview-pie' || chartType === 'overview-doughnut') {
-            // Pie/doughnut showing material used vs wasted
+        } else if (chartType === 'overview-pie') {
             const total = chartData.totalCutMm + chartData.totalWasteMm;
             const usedPct = total > 0 ? ((chartData.totalCutMm / total) * 100).toFixed(1) : '0';
             const wastePct = total > 0 ? ((chartData.totalWasteMm / total) * 100).toFixed(1) : '0';
             config = {
-                type: chartType === 'overview-pie' ? 'pie' : 'doughnut',
+                type: 'pie',
                 data: {
                     labels: [`Material Used (${usedPct}%)`, `Waste (${wastePct}%)`],
                     datasets: [{ data: [chartData.totalCutMm, chartData.totalWasteMm],
@@ -565,43 +477,25 @@ ${html}
                         }}}
                     }
                 },
-                plugins: [pieDataLabelsPlugin] // Adds external percentage labels
-            };
-
-        } else if (chartType === 'nest-bar') {
-            // Horizontal bar chart showing waste % per nest (top 15 worst)
-            const top = chartData.nests.slice(0, 15);
-            config = {
-                type: 'bar',
-                data: {
-                    labels: top.map(n => `Nest ${n.id}`),
-                    datasets: [{ label: 'Waste %', data: top.map(n => parseFloat(n.wastePct.toFixed(2))),
-                        backgroundColor: top.map(n => n.wastePct > 20 ? 'rgba(220, 38, 38, 0.6)' : 'rgba(0, 120, 212, 0.75)'), borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-                    plugins: { legend: { display: false }, title: { display: true, text: 'Top 15 Nests by Waste %' } },
-                    scales: { x: { beginAtZero: true, title: { display: true, text: 'Waste %' } } }
-                }
+                plugins: [pieDataLabelsPlugin]
             };
         }
 
-        if (config) currentChart = new Chart(canvas.getContext('2d'), config);
+        if (config) new Chart(canvas.getContext('2d'), config);
     }
 
     // ============================================================
-    // Helper Functions
-    // ============================================================
+  
+    // Helper functions
 
-    // Format millimetres into a human-readable string (km/m/mm)
+    // makes mm values look nicer (converts to m or km if big enough)
     function formatMm(mm) {
         if (mm >= 1000000) return (mm / 1000000).toFixed(2) + ' km';
         if (mm >= 1000) return (mm / 1000).toFixed(1) + ' m';
         return mm.toFixed(0) + ' mm';
     }
 
-    // Build a scrollable HTML table from CSV content with a download button
+    // builds a scrollable HTML table from CSV content
     function buildCsvViewer(csvContent, batchName) {
         const lines = csvContent.split('\n').filter(l => l.trim());
         if (lines.length === 0) return '';
@@ -619,28 +513,21 @@ ${html}
         return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3 style="margin:0;">Output CSV</h3><button class="secondary-btn" id="btn-download-csv">Download CSV</button></div><div class="csv-viewer"><table>${tableHtml}</table></div></div>`;
     }
 
-    // Trigger a CSV file download using a temporary Blob URL
-    function downloadCsv(csvContent, batchName) {
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url;
-        a.download = `${batchName.replace(/[^a-zA-Z0-9_-]/g, '_')}_output.csv`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    // Open a chart as an image in a new window for printing/saving as PDF
-    function downloadChartAsPdf(canvasId) {
+    // save chart as PNG through the native save dialog
+    async function downloadChartAsPng(canvasId, defaultName) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        const pw = window.open('', '_blank');
-        if (!pw) { alert('Pop-up blocked.'); return; }
-        pw.document.write(`<!DOCTYPE html><html><head><title>Chart</title><style>body{margin:40px;font-family:sans-serif;text-align:center}img{max-width:100%}@media print{button{display:none}}</style></head><body><h2>Waste Chart</h2><img src="${imgData}"><br><br><button onclick="window.print()">Print / Save as PDF</button></body></html>`);
-        pw.document.close();
+        const dataUrl = canvas.toDataURL('image/png', 1.0);
+        await window.fileAPI.savePng(defaultName, dataUrl);
     }
 
-    // Safely escape HTML to prevent XSS when inserting user-provided strings
+    // save CSV through native save dialog
+    async function downloadCsv(csvContent, batchName) {
+        const defaultName = `${batchName.replace(/[^a-zA-Z0-9_-]/g, '_')}_output.csv`;
+        await window.fileAPI.saveCsv(defaultName, csvContent);
+    }
+
+    // escapes HTML to stop XSS when we insert user-provided strings
     function escapeHtml(str) {
         const div = document.createElement('div');
         div.textContent = String(str);

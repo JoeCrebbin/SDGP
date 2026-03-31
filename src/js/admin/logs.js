@@ -1,12 +1,10 @@
 /*
- * admin/logs.js - System Logs Page Handler (Admin Only)
+ * admin/logs.js - System Logs Page (Admin)
+ * SDGP 2025/26
  *
- * Displays a searchable table of activity logs. Every significant action
- * (login, optimisation, user approval, settings change, etc.) is logged
- * by the logActivity() function in main.js.
- *
- * Logs are stored in the activity_logs table with timestamp, user email,
- * action type, and detail text.
+ * Shows a searchable table of everything thats happened in the app.
+ * Logins, optimisations, user approvals, settings changes etc all
+ * get logged by main.js and we just display them here.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -14,10 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchInput = document.getElementById('log-search');
     const searchBtn = document.getElementById('log-search-btn');
 
-    /**
-     * Fetch and display activity logs.
-     * Optional search parameter filters by email, action, or detail text.
-     */
+    // fetch and display the logs, with optional search filter
     async function loadLogs(search) {
         try {
             const response = await window.adminAPI.listLogs(search || '', 200);
@@ -31,7 +26,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // Build a table row for each log entry
             logsBody.innerHTML = '';
             for (const log of response.logs) {
                 const row = document.createElement('tr');
@@ -52,10 +46,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Load all logs on page load
     await loadLogs();
 
-    // Search functionality - button click and Enter key
+    // search by clicking or pressing Enter
     searchBtn.addEventListener('click', () => loadLogs(searchInput.value.trim()));
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') loadLogs(searchInput.value.trim());

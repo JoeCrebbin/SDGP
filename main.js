@@ -1,55 +1,54 @@
 /*
  * main.js - Electron Main Process
+ * SDGP 2025/26
  *
- * This is the entry point for the Electron app. It runs in Node.js (not the browser),
- * so it has access to the filesystem, database, etc. The renderer (browser) side
- * communicates with this file via IPC (Inter-Process Communication) channels.
+ * This is basically the backend of our app. It runs in Node not the browser
+ * so it can do stuff like talk to the database and read/write files.
+ * The frontend (renderer) talks to this through IPC channels which is
+ * Electrons way of letting the two sides communicate.
  *
- * All the backend logic lives here: authentication, optimisation, history, admin, etc.
+ * All the actual logic lives here - auth, running the optimiser,
+ * saving results, admin stuff etc.
  */
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const db = require('./src/databases/db.js');
-const bcrypt = require('bcryptjs');   // Used for hashing and comparing passwords securely
+const bcrypt = require('bcryptjs');   // for hashing passwords so we dont store them in plain text
 const path = require('path');
 const fs = require('fs');
-const { Worker } = require('worker_threads'); // Lets us run heavy tasks off the main thread
+const { Worker } = require('worker_threads'); // runs heavy stuff off the main thread so the UI doesnt freeze
 
-// Safety check - this file only works when run through Electron
+// this will crash if you try to run it with regular node instead of electron
 if (!process.versions || !process.versions.electron) {
   throw new Error('main.js must be run with Electron. Use "npm.cmd start" (PowerShell) or "npm start".');
 }
 
-// Track which user is currently logged in (null = no one)
+// keeps track of whos logged in - null means no one
 let loggedInUserID = null;
 
-// Create the output/ folder if it doesn't exist yet - this is where we save CSV results
+// make sure the output folder exists for saving CSV results
 const outputDir = path.join(__dirname, 'output');
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
-/**
- * Runs the optimisation algorithm inside a Worker Thread.
- * We do this because the algorithm can take a while on large datasets,
- * and running it on the main thread would freeze the entire UI.
- * The worker runs optimiser_worker.js in a separate thread and sends back the result.
+/*
+ * Runs the optimiser in a worker thread so the app doesnt hang
+ * while its crunching numbers. The worker runs optimiser_worker.js
+ * in a separate thread and sends the result back when its done.
  */
 function runOptimisationAsync(params) {
   return new Promise((resolve, reject) => {
     const worker = new Worker(path.join(__dirname, 'src/js/core/optimiser_worker.js'), {
       workerData: params
     });
-    worker.on('message', resolve);  // Worker finished successfully
-    worker.on('error', reject);     // Worker threw an error
+    worker.on('message', resolve);
+    worker.on('error', reject);
     worker.on('exit', (code) => {
       if (code !== 0) reject(new Error(`Worker exited with code ${code}`));
     });
   });
 }
 
-/**
- * Helper to check if a given user ID belongs to an admin account.
- * Used to gate admin-only IPC handlers.
- */
+// quick helper to check if someone is an admin
 async function isAdmin(userID) {
   try {
     const user = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userID);
@@ -61,10 +60,7 @@ async function isAdmin(userID) {
   }
 }
 
-/**
- * Logs an activity to the activity_logs table for the admin System Logs page.
- * Records who did what and when (e.g. "user X ran an optimisation").
- */
+// logs stuff to the activity_logs table so admins can see what happened
 function logActivity(userId, action, detail) {
   try {
     const user = db.prepare('SELECT email FROM users WHERE id = ?').get(userId);
@@ -74,12 +70,11 @@ function logActivity(userId, action, detail) {
 }
 
 // ============================================================
-// Authentication IPC Handlers
-// These handle login, registration, auth checks, and logout.
-// The renderer calls these via window.authAPI (exposed in preload.js).
-// ============================================================
 
-// Check if there's a currently logged-in user and whether they're an admin
+// Auth handlers - login, register, check session, logout
+// The renderer calls these through window.authAPI (see preload.js)
+
+// check if theres someone logged in and if theyre admin
 ipcMain.handle('auth:check-auth', async () => {
   try {
     if(!loggedInUserID) return {
@@ -102,7 +97,7 @@ ipcMain.handle('auth:check-auth', async () => {
   }
 });
 
-// Handle login - validates email/password against the database
+// handle login - check email/password against the db
 ipcMain.handle('auth:login', async (event, { email, password }) => {
   try {
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
@@ -112,13 +107,13 @@ ipcMain.handle('auth:login', async (event, { email, password }) => {
       message: 'Email and Password combination incorrect'
     };
 
-    // Users must be approved by an admin before they can log in
+    // users need to be approved by admin before they can get in
     if (user.is_approved === 0) return {
       success: false,
       message: 'Account pending approval. Please contact an administrator'
     };
 
-    // bcrypt.compare checks the plaintext password against the stored hash
+    // bcrypt compares the plain text password against the stored hash
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
       return {
@@ -127,7 +122,7 @@ ipcMain.handle('auth:login', async (event, { email, password }) => {
       };
     }
 
-    // Math.floor ensures the ID is an integer (IPC serialisation can turn it into a float)
+    // Math.floor because IPC can sometimes turn ints into floats apparently
     loggedInUserID = Math.floor(user.id);
     logActivity(loggedInUserID, 'login', email);
     return {
@@ -144,11 +139,10 @@ ipcMain.handle('auth:login', async (event, { email, password }) => {
   }
 });
 
-// Handle new user registration
-// New users are created with is_approved = 0, so an admin must approve them first
+// register a new user - they start unapproved so admin has to let them in
 ipcMain.handle('auth:register', async (event, { email, password }) => {
   try {
-    // Hash the password with 10 salt rounds before storing
+    // hash with 10 salt rounds
     const hash = await bcrypt.hash(password, 10);
 
     const stmt = db.prepare(`
@@ -162,7 +156,7 @@ ipcMain.handle('auth:register', async (event, { email, password }) => {
     };
   }
   catch (err) {
-    // UNIQUE constraint on email means this fires if the email already exists
+    // unique constraint on email so this fires if they already registered
     console.error('Registration Error:', err);
     return {
       success: false,
@@ -172,21 +166,19 @@ ipcMain.handle('auth:register', async (event, { email, password }) => {
 });
 
 // ============================================================
-// Optimisation IPC Handler
-// This is the main feature - takes CSV component data, runs the
-// bin-packing algorithm, saves results as a CSV file, and stores
-// a reference in the database.
-// ============================================================
+
+// Optimisation handler - this is the main feature of the app
+// Takes CSV data, runs the bin packing algo, saves results
 
 ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, minRemnantMm, oldWasteData }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     if (!components || components.length === 0) return { success: false, message: 'No components provided' };
 
-    // Run the BFD algorithm in a worker thread
+    // run BFD in a worker thread so it doesnt block the UI
     const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: 'waste' });
 
-    // Build the output CSV with one row per component, showing which beam it was assigned to
+    // build the output CSV - one row per component showing which beam it got put on
     const csvRows = ['ItemNumber,NestID,Length_mm,AssignedBeam_mm,BeamIndex,WasteOnBeam_mm,OldWaste_mm'];
     let beamGlobalIndex = 0;
     for (const nestResult of result.results) {
@@ -202,14 +194,14 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
     }
     const csvContent = csvRows.join('\n');
 
-    // Save the CSV file to the output/ directory with a unique timestamp
+    // save the CSV to disk with a timestamp so filenames are unique
     const safeName = batchName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'batch';
     const timestamp = Date.now();
     const csvFilename = `${safeName}_${timestamp}_output.csv`;
     const csvPath = path.join(outputDir, csvFilename);
     fs.writeFileSync(csvPath, csvContent, 'utf-8');
 
-    // Store batch metadata in the database (we save the file path, not the whole CSV)
+    // store the batch info in the database (just the file path, not the whole CSV)
     const insertBatch = db.prepare(
       'INSERT INTO batches (user_id, batch_name, total_wastage_percent, output_csv_path) VALUES (?, ?, ?, ?)'
     );
@@ -217,7 +209,7 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
     const batchInfo = insertBatch.run(loggedInUserID, batchName, result.grandWastePct, csvPath);
     const batchId = Number(batchInfo.lastInsertRowid);
     result.batchId = batchId;
-    result.csvContent = csvContent;  // Send the CSV back to the renderer for display
+    result.csvContent = csvContent;
     logActivity(loggedInUserID, 'optimisation', batchName);
 
     return { success: true, result };
@@ -228,11 +220,10 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
 });
 
 // ============================================================
-// Batch History IPC Handlers
-// Let users view and search their past optimisation runs.
-// ============================================================
 
-// Get all batches for the currently logged-in user, sorted newest first
+// Batch History handlers - lets users look at their past runs
+
+// get all batches for the logged in user, newest first
 ipcMain.handle('history:list', async () => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
@@ -248,19 +239,18 @@ ipcMain.handle('history:list', async () => {
   }
 });
 
-// Get the full CSV content for a specific batch (reads the file from disk)
+// get the full CSV for a specific batch (reads the file back from disk)
 ipcMain.handle('history:detail', async (event, { batchId }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
 
-    // Only allow users to view their own batches
+    // only let users see their own batches
     const batch = db.prepare(
       'SELECT * FROM batches WHERE id = ? AND user_id = ?'
     ).get(batchId, loggedInUserID);
 
     if (!batch) return { success: false, message: 'Batch not found' };
 
-    // Read the CSV file back from disk
     let csvContent = '';
     if (batch.output_csv_path && fs.existsSync(batch.output_csv_path)) {
       csvContent = fs.readFileSync(batch.output_csv_path, 'utf-8');
@@ -273,7 +263,7 @@ ipcMain.handle('history:detail', async (event, { batchId }) => {
   }
 });
 
-// Search batches by name or date using SQL LIKE pattern matching
+// search batches by name or date
 ipcMain.handle('history:search', async (event, { search }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
@@ -289,11 +279,10 @@ ipcMain.handle('history:search', async (event, { search }) => {
 });
 
 // ============================================================
-// User Account IPC Handlers
-// Password changes and account deletion for the logged-in user.
-// ============================================================
 
-// Change the logged-in user's password (requires current password verification)
+// User account stuff - change password, delete account
+
+// change password (need to verify current one first obviously)
 ipcMain.handle('user:change-password', async (event, { currentPassword, newPassword }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
@@ -301,7 +290,6 @@ ipcMain.handle('user:change-password', async (event, { currentPassword, newPassw
     const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(loggedInUserID);
     if (!user) return { success: false, message: 'User not found' };
 
-    // Verify the current password before allowing change
     const match = await bcrypt.compare(currentPassword, user.password_hash);
     if (!match) return { success: false, message: 'Current password is incorrect' };
 
@@ -315,8 +303,8 @@ ipcMain.handle('user:change-password', async (event, { currentPassword, newPassw
   }
 });
 
-// Delete the logged-in user's account and all their data
-// Uses a transaction to ensure everything is deleted atomically
+// delete account and all associated data
+// uses a transaction so everything gets deleted together or not at all
 ipcMain.handle('user:delete-account', async (event, { password }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
@@ -324,35 +312,32 @@ ipcMain.handle('user:delete-account', async (event, { password }) => {
     const user = db.prepare('SELECT password_hash, is_admin FROM users WHERE id = ?').get(loggedInUserID);
     if (!user) return { success: false, message: 'User not found' };
 
-    // Prevent admin accounts from being deleted through the normal UI
+    // dont let admins delete themselves through the normal UI
     if (user.is_admin === 1) return { success: false, message: 'Admin accounts cannot be deleted this way' };
 
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return { success: false, message: 'Password is incorrect' };
 
-    // We need to delete in the right order because of foreign key constraints:
-    // raw_beams_used & components -> batches -> users
+    // have to delete in the right order because of foreign keys
     const deleteAll = db.transaction(() => {
       const batchRows = db.prepare('SELECT id, output_csv_path FROM batches WHERE user_id = ?').all(loggedInUserID);
 
       for (const b of batchRows) {
-        // Delete child rows first (they reference batch_id)
         db.prepare('DELETE FROM raw_beams_used WHERE batch_id = ?').run(b.id);
         db.prepare('DELETE FROM components WHERE batch_id = ?').run(b.id);
 
-        // Clean up the CSV file from disk
+        // clean up the CSV files from disk too
         if (b.output_csv_path && fs.existsSync(b.output_csv_path)) {
           fs.unlinkSync(b.output_csv_path);
         }
       }
 
-      // Now safe to delete batches and the user record
       db.prepare('DELETE FROM batches WHERE user_id = ?').run(loggedInUserID);
       db.prepare('DELETE FROM users WHERE id = ?').run(loggedInUserID);
     });
 
     deleteAll();
-    loggedInUserID = null; // Clear the session
+    loggedInUserID = null;
 
     return { success: true };
   } catch (err) {
@@ -362,12 +347,11 @@ ipcMain.handle('user:delete-account', async (event, { password }) => {
 });
 
 // ============================================================
-// Admin IPC Handlers
-// These are only accessible to admin users. Each handler checks
-// isAdmin() before doing anything.
-// ============================================================
 
-// List all registered users (for the User Management page)
+// Admin handlers - only work if youre an admin
+// Each one checks isAdmin() before doing anything
+
+// list all users for the user management page
 ipcMain.handle('admin:list-users', async () => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -379,7 +363,7 @@ ipcMain.handle('admin:list-users', async () => {
   }
 });
 
-// Approve a pending user so they can log in
+// approve a pending user so they can actually log in
 ipcMain.handle('admin:approve-user', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -392,11 +376,10 @@ ipcMain.handle('admin:approve-user', async (event, { userId }) => {
   }
 });
 
-// Reject (delete) a pending user registration
+// reject a pending user (basically just deletes them)
 ipcMain.handle('admin:reject-user', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
-    // Don't allow deleting admin accounts
     const target = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId);
     if (target && target.is_admin === 1) return { success: false, message: 'Cannot delete an admin user' };
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
@@ -408,7 +391,7 @@ ipcMain.handle('admin:reject-user', async (event, { userId }) => {
   }
 });
 
-// Delete a user and cascade-delete all their data (same pattern as user:delete-account)
+// delete a user and all their data (same cascade pattern as account self-delete)
 ipcMain.handle('admin:delete-user', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -435,14 +418,13 @@ ipcMain.handle('admin:delete-user', async (event, { userId }) => {
   }
 });
 
-// List activity logs with optional search filtering
+// get activity logs with optional search
 ipcMain.handle('admin:list-logs', async (event, { search, limit }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
     const maxRows = limit || 200;
     let logs;
     if (search && search.trim()) {
-      // Search across email, action type, and detail using SQL LIKE
       const pattern = '%' + search.trim() + '%';
       logs = db.prepare('SELECT * FROM activity_logs WHERE user_email LIKE ? OR action LIKE ? OR detail LIKE ? ORDER BY created_at DESC LIMIT ?').all(pattern, pattern, pattern, maxRows);
     } else {
@@ -455,8 +437,8 @@ ipcMain.handle('admin:list-logs', async (event, { search, limit }) => {
   }
 });
 
-// List ALL batches across ALL users (for the admin All Batches page)
-// Joins with users table to show who created each batch
+// list ALL batches across ALL users (admin only)
+// joins with users table to show who made each one
 ipcMain.handle('admin:list-all-batches', async (event, { search }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -483,7 +465,7 @@ ipcMain.handle('admin:list-all-batches', async (event, { search }) => {
   }
 });
 
-// Get full details for any batch (admin can view any user's batch)
+// get full details for any batch (admin can see anyones)
 ipcMain.handle('admin:batch-detail', async (event, { batchId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -500,7 +482,7 @@ ipcMain.handle('admin:batch-detail', async (event, { batchId }) => {
   }
 });
 
-// Get/update global settings (key-value pairs stored in global_settings table)
+// get and update global settings (key-value pairs)
 ipcMain.handle('admin:get-settings', async () => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -514,7 +496,7 @@ ipcMain.handle('admin:get-settings', async () => {
   }
 });
 
-// Save updated global settings using INSERT OR REPLACE (upsert pattern)
+// save settings using upsert (INSERT OR REPLACE)
 ipcMain.handle('admin:update-settings', async (event, { settings }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -533,8 +515,7 @@ ipcMain.handle('admin:update-settings', async (event, { settings }) => {
   }
 });
 
-// Get default settings for any authenticated user (used by the dashboard to
-// pre-fill kerf and min remnant values from the global config)
+// any logged in user can grab the default settings (dashboard uses this to prefill kerf etc)
 ipcMain.handle('settings:get-defaults', async () => {
   try {
     if (!loggedInUserID) return { success: false };
@@ -547,7 +528,7 @@ ipcMain.handle('settings:get-defaults', async () => {
   }
 });
 
-// List batches for a specific user (admin only - used in User Management)
+// list batches for a specific user (admin only - used in user management)
 ipcMain.handle('admin:user-batches', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
@@ -561,32 +542,68 @@ ipcMain.handle('admin:user-batches', async (event, { userId }) => {
   }
 });
 
-// Clear server-side session on logout
+// save CSV using the native OS file picker dialog
+ipcMain.handle('file:save-csv', async (event, { defaultName, csvContent }) => {
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: defaultName,
+      filters: [{ name: 'CSV Files', extensions: ['csv'] }]
+    });
+    if (canceled || !filePath) return { success: false, message: 'Cancelled' };
+    fs.writeFileSync(filePath, csvContent, 'utf-8');
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('File Save Error:', err);
+    return { success: false, message: err.message };
+  }
+});
+
+// save PNG chart image using native file picker
+ipcMain.handle('file:save-png', async (event, { defaultName, dataUrl }) => {
+  try {
+    const win = BrowserWindow.getFocusedWindow();
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      defaultPath: defaultName,
+      filters: [{ name: 'PNG Images', extensions: ['png'] }]
+    });
+    if (canceled || !filePath) return { success: false, message: 'Cancelled' };
+    // strip the data URL prefix and decode the base64 to write the actual PNG bytes
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('File Save Error:', err);
+    return { success: false, message: err.message };
+  }
+});
+
+// clear the session on logout
 ipcMain.handle('auth:logout', async () => {
   loggedInUserID = null;
   return { success: true };
 });
 
 // ============================================================
-// Window Creation & App Lifecycle
-// ============================================================
 
-// Create the main application window with security settings
+// Window setup and app lifecycle
+
+// create the main window with security stuff enabled
 const createWindow = () => {
   const win = new BrowserWindow({
     width: 1000,
     height: 700,
     webPreferences: {
       preload: path.join(__dirname, 'src/js/core/preload.js'),
-      contextIsolation: true,     // Keeps renderer and Node.js contexts separate (security)
-      nodeIntegration: false,     // Renderer can't use require() directly (security)
-      sandbox: false              // Required for worker_threads to work in preload context
+      contextIsolation: true, // keeps renderer and node separate for security
+      nodeIntegration: false, // renderer cant use require() directly
+      sandbox: false // needed for worker_threads to work
     }
   });
 
   win.loadFile(path.join(__dirname, 'src/html/index.html'));
-  //win.webContents.openDevTools(); // Uncomment this line to open DevTools for debugging
+  //win.webContents.openDevTools(); // uncomment for debugging
 }
 
-// Start the app once Electron is ready
+// start the app when electron is ready
 app.whenReady().then((createWindow));

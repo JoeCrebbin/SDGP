@@ -1,31 +1,28 @@
 /*
- * db.js - Database Setup and Schema
+ * db.js - Database Setup
+ * SDGP 2025/26
  *
- * Uses better-sqlite3, a synchronous SQLite driver for Node.js.
- * This file:
- *   1. Creates the database file (grant_vessels.db) in this directory
- *   2. Sets up all tables if they don't exist
- *   3. Runs any migrations for schema changes
- *   4. Seeds default admin and user accounts
- *   5. Inserts default global settings
+ * Sets up the SQLite database using better-sqlite3. Creates all the tables,
+ * runs any migrations for when we add new columns, and seeds default
+ * accounts so you can log in straight away.
  *
  * Tables:
- *   - users: email, password hash, admin flag, approval status
- *   - batches: links to a user, stores batch name, waste %, path to output CSV
- *   - raw_beams_used: tracks which beams were used per batch
+ *   - users: accounts with email, hashed password, admin flag, approval status
+ *   - batches: each optimisation run, linked to a user
+ *   - raw_beams_used: tracks beams used per batch
  *   - components: individual cut pieces per batch
- *   - activity_logs: audit trail of user actions (for admin System Logs page)
- *   - global_settings: key-value pairs for app-wide defaults
+ *   - activity_logs: who did what and when (for the admin logs page)
+ *   - global_settings: key-value pairs for app defaults
  */
 
 const Database  = require('better-sqlite3');
 const path = require('path');
 
-// Create (or open) the SQLite database file
+// create or open the database file
 const dbPath = path.join(__dirname, 'grant_vessels.db');
 const db = new Database(dbPath, { verbose: console.log });
 
-// Create all tables using IF NOT EXISTS so this is safe to run multiple times
+// create tables if they dont exist - safe to run multiple times
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,10 +74,8 @@ db.exec(`
     );
 `);
 
-// ---- Migrations ----
-// These handle schema changes for databases created before these columns existed.
-// The try/catch pattern: try to SELECT the column - if it fails, ALTER TABLE to add it.
-
+// migrations - these handle adding columns that didnt exist in older versions
+// we try to select the column and if it fails we add it
 try {
     db.prepare('SELECT user_id FROM batches LIMIT 1').get();
 } catch (e) {
@@ -93,9 +88,8 @@ try {
     db.exec('ALTER TABLE batches ADD COLUMN output_csv_path TEXT');
 }
 
-// ---- Seed Data ----
-// Insert default accounts if they don't already exist (INSERT OR IGNORE).
-// Both use the bcrypt hash of "password" for initial setup.
+// seed default accounts if they dont exist already
+// both use the bcrypt hash of "password" - change these in production obviously
 const adminPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 
@@ -104,16 +98,15 @@ const insertUser = db.prepare(`
     VALUES (?, ?, ?, 1)
 `)
 
-// Default admin:  admin@grantvessels.com / password
+// admin account: admin@grantvessels.com / password
 insertUser.run('admin@grantvessels.com', adminPasswordHash, 1);
-// Default user:   user@grantvessels.com / password
+// regular user: user@grantvessels.com / password
 insertUser.run('user@grantvessels.com', userPasswordHash, 0);
 
-// ---- Default Global Settings ----
-// These provide initial values for the dashboard optimisation parameters
+// default global settings - these prefill on the dashboard
 const insertSetting = db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
-insertSetting.run('default_kerf_mm', '3.0');           // Saw blade width
-insertSetting.run('default_min_remnant_mm', '3');     // Minimum usable leftover
-insertSetting.run('max_beams_display', '50');            // Max beams shown in cutting layout
+insertSetting.run('default_kerf_mm', '3.0'); // saw blade width
+insertSetting.run('default_min_remnant_mm', '3'); // minimum usable offcut
+insertSetting.run('max_beams_display', '50'); // max beams shown in layout
 
 module.exports = db;

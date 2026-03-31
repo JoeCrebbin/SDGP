@@ -1,14 +1,10 @@
 /*
- * admin/settings.js - Global Settings Page Handler (Admin Only)
+ * admin/settings.js - Global Settings Page (Admin)
+ * SDGP 2025/26
  *
- * Manages application-wide default values that are stored in the
- * global_settings table as key-value pairs. Currently supports:
- *   - default_kerf_mm: Default saw blade width (used on dashboard)
- *   - default_min_remnant_mm: Minimum remnant length before discarding
- *   - max_beams_display: How many beams to show in the cutting layout
- *
- * These values are loaded by the dashboard on page load so users
- * get consistent defaults without having to set them each time.
+ * Lets the admin set app-wide defaults like kerf width and min remnant.
+ * These get loaded on the dashboard automatically so users dont have
+ * to enter them every time. Pretty simple page really.
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -18,7 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saveBtn = document.getElementById('save-settings-btn');
     const msg = document.getElementById('settings-message');
 
-    // Load current settings values from the database
+    // load the current values from the database
     try {
         const response = await window.adminAPI.getSettings();
         if (response.success) {
@@ -30,16 +26,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Load settings error:', err);
     }
 
-    // Save updated settings when the button is clicked
+    // save when the button is clicked
     saveBtn.addEventListener('click', async () => {
-        // Collect all settings into an object
         const settings = {
             default_kerf_mm: kerfInput.value,
             default_min_remnant_mm: remnantInput.value,
             max_beams_display: maxBeamsInput.value
         };
 
-        // Validate: min remnant must be at least the kerf width
+        // validation - remnant cant be smaller than the kerf (makes no physical sense)
         const kerf = parseFloat(settings.default_kerf_mm) || 0;
         const remnant = parseFloat(settings.default_min_remnant_mm) || 0;
         if (remnant < kerf) {
@@ -53,7 +48,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         msg.style.color = '';
 
         try {
-            // Backend uses INSERT OR REPLACE to upsert each key-value pair
             const response = await window.adminAPI.updateSettings(settings);
             if (response.success) {
                 msg.textContent = 'Settings saved successfully.';

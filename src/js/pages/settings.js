@@ -1,11 +1,10 @@
 /*
- * settings.js - User Settings Page Handler
+ * settings.js - User Settings Page
+ * SDGP 2025/26
  *
- * Manages two features:
- *   1. Password change - requires current password verification
- *   2. Account deletion - requires password confirmation + modal warning
- *
- * Both operations go through the userAPI exposed via the preload bridge.
+ * Pretty straightforward - lets users change their password or
+ * delete their account. The delete has a confirmation modal because
+ * we dont want anyone accidentally nuking their data.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,14 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const passwordMsg = document.getElementById('password-message');
     const deleteMsg = document.getElementById('delete-message');
 
-    // Password strength validation (same rules as registration)
-    // Must have: 8+ chars, uppercase, lowercase, number, special character
+    // same password rules as registration
     function validatePassword(password) {
         const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         return regex.test(password);
     }
 
-    // ---- Change Password ----
+    // change password - need to verify the current one first
     btnChangePassword.addEventListener('click', async () => {
         const currentPass = document.getElementById('current-password').value;
         const newPass = document.getElementById('new-password').value;
@@ -29,7 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         passwordMsg.textContent = '';
 
-        // Client-side validation before hitting the backend
         if (!currentPass || !newPass || !confirmPass) {
             passwordMsg.style.color = 'var(--danger)';
             passwordMsg.textContent = 'Please fill in all password fields.';
@@ -48,7 +45,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Show loading state
         btnChangePassword.disabled = true;
         passwordMsg.style.color = '';
         passwordMsg.textContent = 'Changing password...';
@@ -58,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.success) {
                 passwordMsg.style.color = 'var(--success)';
                 passwordMsg.textContent = 'Password changed successfully.';
-                // Clear the form fields on success
+                // clear the form
                 document.getElementById('current-password').value = '';
                 document.getElementById('new-password').value = '';
                 document.getElementById('confirm-password').value = '';
@@ -75,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ---- Delete Account ----
+    // delete account - scary button, needs password confirmation and a dialog
     btnDeleteAccount.addEventListener('click', async () => {
         const password = document.getElementById('delete-password').value;
 
@@ -87,8 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Show a native confirmation dialog before proceeding
-        // Note: we use window.confirm explicitly to avoid shadowing the built-in
+        // make absolutely sure they want to do this
         const userConfirmed = window.confirm('Are you sure you want to delete your account? This cannot be undone.');
         if (!userConfirmed) return;
 
@@ -99,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await window.userAPI.deleteAccount(password);
             if (response.success) {
-                // Account deleted - redirect to login page
+                // gone - redirect to login
                 sessionStorage.clear();
                 window.location.href = './index.html';
             } else {
