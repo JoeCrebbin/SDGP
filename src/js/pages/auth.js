@@ -77,6 +77,8 @@ async function handleRegister() {
   const email = document.getElementById('email').value.trim().toLowerCase();
   const password = document.getElementById('password').value;
   const confirmPassword = document.getElementById('confirm-password').value;
+  const locationEl = document.getElementById('location');
+  const location = locationEl ? String(locationEl.value || '').trim() : '';
   const msg = document.getElementById('message');
 
   // validate everything step by step so users know exactly whats wrong
@@ -111,9 +113,15 @@ async function handleRegister() {
     return;
   }
 
+  if (!location) {
+    msg.style.color = 'red';
+    msg.textContent = 'Please select your company location';
+    return;
+  }
+
   // all good - send it to the backend
   try {
-    const response = await window.authAPI.register(email, password);
+    const response = await window.authAPI.register(email, password, location);
 
     if (response.success) {
       msg.style.color = 'green';

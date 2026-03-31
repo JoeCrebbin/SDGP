@@ -29,6 +29,7 @@ db.exec(`
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE,
         password_hash TEXT,
+        location TEXT,
         role TEXT DEFAULT 'user',
         is_admin INTEGER DEFAULT 0,
         is_approved INTEGER DEFAULT 0
@@ -169,6 +170,12 @@ try {
     db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
 }
 
+try {
+    db.prepare('SELECT location FROM users LIMIT 1').get();
+} catch (e) {
+    db.exec("ALTER TABLE users ADD COLUMN location TEXT");
+}
+
 // backfill role for older databases that only used is_admin
 db.exec(`
     UPDATE users
@@ -176,6 +183,13 @@ db.exec(`
         WHEN role IS NULL OR TRIM(role) = '' THEN CASE WHEN is_admin = 1 THEN 'admin' ELSE 'user' END
         ELSE role
     END
+`);
+
+// keep location non-empty for older rows so same-site access checks are stable
+db.exec(`
+    UPDATE users
+    SET location = 'London'
+    WHERE location IS NULL OR TRIM(location) = ''
 `);
 
 // ---- Seed Data ----
@@ -186,16 +200,16 @@ const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSku
 const managerPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 
 const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (email, password_hash, role, is_admin, is_approved)
-    VALUES (?, ?, ?, ?, 1)
+    INSERT OR IGNORE INTO users (email, password_hash, location, role, is_admin, is_approved)
+    VALUES (?, ?, ?, ?, ?, 1)
 `)
 
 // default admin account: admin@grantvessels.com / password
-insertUser.run('admin@grantvessels.com', adminPasswordHash, 'admin', 1);
+insertUser.run('admin@grantvessels.com', adminPasswordHash, 'London', 'admin', 1);
 // manager account: manager@grantvessels.com / password
-insertUser.run('manager@grantvessels.com', managerPasswordHash, 'manager', 1);
+insertUser.run('manager@grantvessels.com', managerPasswordHash, 'London', 'manager', 1);
 // regular user: user@grantvessels.com / password
-insertUser.run('user@grantvessels.com', userPasswordHash, 'user', 0);
+insertUser.run('user@grantvessels.com', userPasswordHash, 'London', 'user', 0);
 
 // default global settings - these prefill on the dashboard
 const insertSetting = db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
@@ -208,5 +222,7 @@ db.prepare("UPDATE users SET role = 'admin', is_admin = 1, is_approved = 1 WHERE
     .run('admin@grantvessels.com');
 db.prepare("UPDATE users SET role = 'manager', is_admin = 1, is_approved = 1 WHERE email = ?")
     .run('manager@grantvessels.com');
+db.prepare("UPDATE users SET location = 'London' WHERE email IN (?, ?, ?) AND (location IS NULL OR TRIM(location) = '')")
+    .run('admin@grantvessels.com', 'manager@grantvessels.com', 'user@grantvessels.com');
 
 module.exports = db;

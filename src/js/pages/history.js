@@ -25,12 +25,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 : await window.historyAPI.list();
 
             if (!response.success) {
-                historyBody.innerHTML = '<tr><td colspan="4">Failed to load history.</td></tr>';
+                historyBody.innerHTML = '<tr><td colspan="5">Failed to load history.</td></tr>';
                 return;
             }
 
             if (response.batches.length === 0) {
-                historyBody.innerHTML = '<tr><td colspan="4">No past optimisations found.</td></tr>';
+                historyBody.innerHTML = '<tr><td colspan="5">No optimisation history found for your location.</td></tr>';
                 trendPoints = [];
                 return;
             }
@@ -46,8 +46,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const dateStr = batch.created_at
                     ? new Date(batch.created_at).toLocaleString()
                     : 'N/A';
+                const ownerEmail = batch.owner_email || 'Unknown';
+                const ownerLabel = batch.is_own === 1 ? `${ownerEmail} (You)` : ownerEmail;
                 row.innerHTML = `
                     <td>${escapeHtml(batch.batch_name || 'Unnamed')}</td>
+                    <td>${escapeHtml(ownerLabel)}</td>
                     <td>${batch.total_wastage_percent != null ? batch.total_wastage_percent.toFixed(2) + '%' : 'N/A'}</td>
                     <td>${dateStr}</td>
                     <td><button class="secondary-btn view-btn" data-id="${batch.id}">View</button></td>
@@ -60,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         } catch (err) {
             console.error('History load error:', err);
-            historyBody.innerHTML = '<tr><td colspan="4">Error loading history.</td></tr>';
+            historyBody.innerHTML = '<tr><td colspan="5">Error loading history.</td></tr>';
         }
     }
 

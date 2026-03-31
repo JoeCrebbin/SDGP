@@ -105,10 +105,24 @@
     `;
   }
 
-  function downloadLayoutAsPdf(batchName) {
+  async function downloadLayoutAsPdf(batchName) {
     const container = document.getElementById('beam-layout-container');
     if (!container) return;
     const html = container.innerHTML;
+    const safeName = String(batchName || 'layout').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    if (window.fileAPI && typeof window.fileAPI.saveLayoutPdf === 'function') {
+      const result = await window.fileAPI.saveLayoutPdf(
+        `${safeName}_layout.pdf`,
+        `Cutting Layout - ${batchName}`,
+        html
+      );
+      if (!result?.success && result?.message !== 'Cancelled') {
+        window.alert(result?.message || 'Failed to save PDF layout.');
+      }
+      return;
+    }
+
     const pw = window.open('', '_blank');
     if (!pw) { alert('Pop-up blocked.'); return; }
     pw.document.write(`<!DOCTYPE html><html><head><title>Cutting Layout - ${escapeHtml(batchName)}</title>
@@ -127,9 +141,12 @@ body{margin:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
 </style></head><body>
 <h2>Cutting Layout - ${escapeHtml(batchName)}</h2>
 ${html}
-<br><button onclick="window.print()">Print / Save as PDF</button>
 </body></html>`);
     pw.document.close();
+    pw.onload = () => {
+      pw.focus();
+      pw.print();
+    };
   }
 
   function buildCsvViewer(csvContent, batchName) {

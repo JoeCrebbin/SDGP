@@ -4,8 +4,8 @@ const { bootScript, tick } = require('../helpers/ui-test-utils');
 
 function adminUsersHtml() {
   return `
-  <table><tbody id="pending-body"></tbody></table>
-  <table><tbody id="users-body"></tbody></table>
+  <table><thead><tr><th>Email</th><th>Location</th><th>Role</th><th>Actions</th></tr></thead><tbody id="pending-body"></tbody></table>
+  <table><thead><tr><th>ID</th><th>Email</th><th>Location</th><th>Role</th><th>Status</th><th>Actions</th><th>Role Management</th></tr></thead><tbody id="users-body"></tbody></table>
   <p id="admin-message"></p>
   <h3 id="all-users-title"></h3>
   <section id="user-batches-section" style="display:none;"><tbody id="user-batches-body"></tbody></section>
@@ -70,8 +70,8 @@ test('List Pending Users', async () => {
         listUsers: async () => ({
           success: true,
           users: [
-            { id: 1, email: 'pending@example.com', role: 'user', is_admin: 0, is_approved: 0 },
-            { id: 2, email: 'approved@example.com', role: 'user', is_admin: 0, is_approved: 1 }
+            { id: 1, email: 'pending@example.com', location: 'Leeds', role: 'user', is_admin: 0, is_approved: 0 },
+            { id: 2, email: 'approved@example.com', location: 'London', role: 'user', is_admin: 0, is_approved: 1 }
           ]
         }),
         approveUser: async () => ({ success: true }),
@@ -85,6 +85,36 @@ test('List Pending Users', async () => {
   });
 
   assert.equal(document.querySelectorAll('#pending-body tr').length, 1);
+  assert.match(document.querySelector('#pending-body tr td:nth-child(2)').textContent, /Leeds/i);
+  cleanup();
+});
+
+test('All Users Table Shows Location', async () => {
+  const { document, cleanup } = await bootScript({
+    html: adminUsersHtml(),
+    scriptRelPath: 'src/js/admin/users.js',
+    windowMocks: {
+      authAPI: { checkAuth: async () => ({ isManager: true, userId: 99 }) },
+      adminAPI: {
+        listUsers: async () => ({
+          success: true,
+          users: [
+            { id: 11, email: 'worker@example.com', location: 'Bristol', role: 'user', is_admin: 0, is_approved: 1 }
+          ]
+        }),
+        approveUser: async () => ({ success: true }),
+        rejectUser: async () => ({ success: true }),
+        deleteUser: async () => ({ success: true }),
+        userBatches: async () => ({ success: true, batches: [] }),
+        batchDetail: async () => ({ success: false }),
+        updateUserRole: async () => ({ success: true })
+      }
+    }
+  });
+
+  const userRow = document.querySelector('#users-body tr');
+  assert.ok(userRow);
+  assert.match(userRow.children[2].textContent, /Bristol/i);
   cleanup();
 });
 
@@ -97,9 +127,9 @@ test('Approve User', async () => {
       confirm: () => true,
       authAPI: { checkAuth: async () => ({ isManager: true }) },
       adminAPI: {
-        listUsers: async () => ({ success: true, users: [{ id: 3, email: 'p@example.com', role: 'user', is_admin: 0, is_approved: 0 }] }),
-        approveUser: async (id, role) => {
-          calls.push([id, role]);
+        listUsers: async () => ({ success: true, users: [{ id: 3, email: 'p@example.com', location: 'Leeds', role: 'user', is_admin: 0, is_approved: 0 }] }),
+        approveUser: async (id, role, actingPassword) => {
+          calls.push([id, role, actingPassword]);
           return { success: true };
         },
         rejectUser: async () => ({ success: true }),
@@ -113,9 +143,11 @@ test('Approve User', async () => {
 
   document.querySelector('.pending-role-select').value = 'admin';
   document.querySelector('.approve-btn').click();
+  document.getElementById('role-verify-password').value = 'Password1!';
+  document.getElementById('role-verify-confirm').click();
   await tick();
 
-  assert.deepEqual(calls[0], [3, 'admin']);
+  assert.deepEqual(calls[0], [3, 'admin', 'Password1!']);
   cleanup();
 });
 

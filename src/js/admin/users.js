@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const response = await window.adminAPI.listUsers();
             if (!response.success) {
                 const message = response.message || 'Failed to load users.';
-                usersBody.innerHTML = `<tr><td colspan="5">${escapeHtml(message)}</td></tr>`;
+                usersBody.innerHTML = `<tr><td colspan="7">${escapeHtml(message)}</td></tr>`;
                 if (message.toLowerCase().includes('unauthorized')) {
                     msg.textContent = 'Admin access required. Please log in as an admin.';
                     msg.style.color = 'var(--danger)';
@@ -108,14 +108,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // pending approvals table
             if (pending.length === 0) {
-                pendingBody.innerHTML = '<tr><td colspan="3">No pending approvals.</td></tr>';
+                pendingBody.innerHTML = '<tr><td colspan="4">No pending approvals.</td></tr>';
             } else {
                 pendingBody.innerHTML = '';
                 for (const user of pending) {
                     const row = document.createElement('tr');
                     const pendingRole = String(user.role || 'user').toLowerCase();
+                    const location = escapeHtml(user.location || 'Unknown');
                     row.innerHTML = `
                         <td>${escapeHtml(user.email)}</td>
+                        <td>${location}</td>
                         <td>
                             <select class="pending-role-select" data-id="${user.id}" style="width:auto; min-width:120px;">
                                 ${buildRoleOptions(pendingRole)}
@@ -135,6 +137,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             for (const user of all) {
                 const row = document.createElement('tr');
                 const isSelf = currentUserId > 0 && Number(user.id) === currentUserId;
+                const location = escapeHtml(user.location || 'Unknown');
                 const role = String(user.role || (user.is_admin === 1 ? 'admin' : 'user')).toLowerCase();
                 const status = user.is_approved === 1 ? 'Approved' : 'Pending';
                 // cant delete admin accounts from the UI (safety thing)
@@ -151,6 +154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 row.innerHTML = `
                     <td>${user.id}</td>
                     <td>${escapeHtml(user.email)}</td>
+                    <td>${location}</td>
                     <td>${role.charAt(0).toUpperCase() + role.slice(1)}</td>
                     <td>${status}</td>
                     <td>${actions}</td>

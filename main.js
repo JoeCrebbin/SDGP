@@ -81,6 +81,14 @@ function normalizeRole(role) {
   return 'user';
 }
 
+const COMPANY_LOCATIONS = ['Bristol', 'Leeds', 'London', 'Manchester', 'Glasgow', 'Southampton', 'Liverpool'];
+
+function normalizeLocation(location) {
+  const value = String(location || '').trim().toLowerCase();
+  const match = COMPANY_LOCATIONS.find((entry) => entry.toLowerCase() === value);
+  return match || null;
+}
+
 // logs stuff to the activity_logs table so admins can see what happened
 function logActivity(userId, action, detail) {
   try {
@@ -199,16 +207,24 @@ ipcMain.handle('auth:login', async (event, { email, password }) => {
 });
 
 // register a new user - they start unapproved so admin has to let them in
-ipcMain.handle('auth:register', async (event, { email, password }) => {
+ipcMain.handle('auth:register', async (event, { email, password, location }) => {
   try {
+    const normalizedLocation = normalizeLocation(location);
+    if (!normalizedLocation) {
+      return {
+        success: false,
+        message: 'Please select a valid company location'
+      };
+    }
+
     // hash with 10 salt rounds
     const hash = await bcrypt.hash(password, 10);
 
     const stmt = db.prepare(`
-      INSERT INTO users (email, password_hash, role, is_admin, is_approved)
-      VALUES (?, ?, 'user', 0, 0)
+      INSERT INTO users (email, password_hash, location, role, is_admin, is_approved)
+      VALUES (?, ?, ?, 'user', 0, 0)
     `);
-    stmt.run(email, hash);
+    stmt.run(email, hash, normalizedLocation);
 
     return {
       success: true
@@ -323,8 +339,15 @@ ipcMain.handle('history:list', async () => {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
 
     const batches = db.prepare(
-      'SELECT id, batch_name, total_wastage_percent, output_csv_path, created_at FROM batches WHERE user_id = ? ORDER BY created_at DESC'
-    ).all(loggedInUserID);
+      `SELECT b.id, b.batch_name, b.total_wastage_percent, b.output_csv_path, b.created_at,
+              u.email AS owner_email, u.location AS owner_location,
+              CASE WHEN b.user_id = ? THEN 1 ELSE 0 END AS is_own
+       FROM batches b
+       JOIN users u ON b.user_id = u.id
+       JOIN users me ON me.id = ?
+       WHERE LOWER(TRIM(u.location)) = LOWER(TRIM(me.location))
+       ORDER BY b.created_at DESC`
+    ).all(loggedInUserID, loggedInUserID);
 
     return { success: true, batches };
   } catch (err) {
@@ -338,10 +361,15 @@ ipcMain.handle('history:detail', async (event, { batchId }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
 
-    // only let users see their own batches
+    // allow users to see their own and colleagues' batches from the same location
     const batch = db.prepare(
-      'SELECT * FROM batches WHERE id = ? AND user_id = ?'
-    ).get(batchId, loggedInUserID);
+      `SELECT b.*
+       FROM batches b
+       JOIN users owner ON owner.id = b.user_id
+       JOIN users me ON me.id = ?
+       WHERE b.id = ?
+         AND LOWER(TRIM(owner.location)) = LOWER(TRIM(me.location))`
+    ).get(loggedInUserID, batchId);
 
     if (!batch) return { success: false, message: 'Batch not found' };
 
@@ -363,8 +391,16 @@ ipcMain.handle('history:search', async (event, { search }) => {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     const pattern = '%' + (search || '').trim() + '%';
     const batches = db.prepare(
-      'SELECT id, batch_name, total_wastage_percent, output_csv_path, created_at FROM batches WHERE user_id = ? AND (batch_name LIKE ? OR created_at LIKE ?) ORDER BY created_at DESC'
-    ).all(loggedInUserID, pattern, pattern);
+      `SELECT b.id, b.batch_name, b.total_wastage_percent, b.output_csv_path, b.created_at,
+              u.email AS owner_email, u.location AS owner_location,
+              CASE WHEN b.user_id = ? THEN 1 ELSE 0 END AS is_own
+       FROM batches b
+       JOIN users u ON b.user_id = u.id
+       JOIN users me ON me.id = ?
+       WHERE LOWER(TRIM(u.location)) = LOWER(TRIM(me.location))
+         AND (b.batch_name LIKE ? OR b.created_at LIKE ? OR u.email LIKE ?)
+       ORDER BY b.created_at DESC`
+    ).all(loggedInUserID, loggedInUserID, pattern, pattern, pattern);
     return { success: true, batches };
   } catch (err) {
     console.error('History Search Error:', err);
@@ -376,10 +412,12 @@ ipcMain.handle('history:trend', async () => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     const rows = db.prepare(
-      `SELECT id, batch_name, total_wastage_percent, created_at
-       FROM batches
-       WHERE user_id = ?
-       ORDER BY created_at ASC`
+      `SELECT b.id, b.batch_name, b.total_wastage_percent, b.created_at
+       FROM batches b
+       JOIN users owner ON owner.id = b.user_id
+       JOIN users me ON me.id = ?
+       WHERE LOWER(TRIM(owner.location)) = LOWER(TRIM(me.location))
+       ORDER BY b.created_at ASC`
     ).all(loggedInUserID);
     return { success: true, points: rows };
   } catch (err) {
@@ -503,7 +541,7 @@ ipcMain.handle('admin:list-users', async () => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
     const users = db.prepare(
-      `SELECT id, email, role, is_admin, is_approved
+      `SELECT id, email, location, role, is_admin, is_approved
        FROM users
        ORDER BY id`
     ).all().map((u) => ({
