@@ -8,7 +8,33 @@
     <div id="sidenav-container"></div>
     <div id="main-content">
       <h1>Batch History</h1>
+      <p>View your past optimisation runs.</p>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+          <input type="text" id="history-search" placeholder="Search by batch name or date..." style="max-width:300px;">
+          <button class="secondary-btn" id="history-search-btn">Search</button>
+        </div>
+        <table id="history-table">
+          <thead>
+            <tr>
+              <th>Batch Name</th>
+              <th>Waste %</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="4">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section id="detail-section" style="display:none;"></section>
     </div>
-    <script src="../js/sidenav.js"></script>
+
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/lib/chart.umd.min.js"></script>
+    <script src="../js/pages/history.js"></script>
   </body>
 </html>

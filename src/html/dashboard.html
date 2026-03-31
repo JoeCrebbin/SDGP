@@ -9,110 +9,108 @@
 
     <div id="main-content">
       <h1>Dashboard</h1>
-      <p>Upload the CSV to begin optimisation.</p>
+      <p>Upload a CSV to begin optimisation.</p>
 
-      <section class="upload-section">
-        <input type="file" id="csv-file" accept=".csv">
-        <button id="inspect-btn" class="secondary-btn">Inspect File</button>
-      </section>
-
-      <p id="message"></p>
+      <div class="card">
+        <div class="upload-section">
+          <input type="file" id="csv-file" accept=".csv">
+          <button id="inspect-btn" class="secondary-btn" disabled>Inspect File</button>
+        </div>
+        <p class="message" id="message"></p>
+      </div>
 
       <section id="optimisation-settings" style="display:none;">
 
-        <hr>
+        <div class="card">
+          <h3 style="margin-top:0;">Optimisation Parameters</h3>
 
-        <h3>Optimisation Parameters</h3>
+          <div class="mapping-grid">
+            <div class="form-group">
+              <label for="batch-name">Batch Name / Reference</label>
+              <input type="text" id="batch-name" placeholder="E.g. Hull_Section_A1">
+            </div>
+            <div class="form-group">
+              <label for="units">Measurement Units</label>
+              <select id="units">
+                <option value="mm">Millimeters (mm)</option>
+                <option value="cm">Centimeters (cm)</option>
+                <option value="m">Meters (m)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="kerf">Saw Blade Width (mm)</label>
+              <input type="number" id="kerf" value="3.0" step="0.1" min="0">
+              <small>Standard shipyard blade kerf is 3.0mm.</small>
+            </div>
+            <div class="form-group">
+              <label for="min-remnant">Minimum Reusable Length (mm)</label>
+              <input type="number" id="min-remnant" value="500" min="0">
+              <small>Pieces shorter than this are logged as waste.</small>
+            </div>
+          </div>
 
-        <div class="form-group">
-          <label>Batch Name / Reference:</label>
-          <input type="text" id="batch-name" placeholder="E.g. Hull_Section_A1">
+          <div class="form-group" style="margin-top:4px;">
+            <label>
+              <input type="checkbox" id="has-headers" checked>
+              First row contains headers
+            </label>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>First row contains headers?</label>
-          <input type="checkbox" id="has-headers">
+        <div class="card">
+          <h3 style="margin-top:0;">Column Mapping</h3>
+          <p><small>Match your CSV headers to the required fields.</small></p>
+
+          <p style="margin:4px 0 2px; font-weight:600; font-size:13px; color:var(--muted);">Required Fields</p>
+          <div class="mapping-grid">
+            <div class="form-group">
+              <label for="map-id">Component ID <small>(e.g. ItemNumber)</small></label>
+              <select id="map-id" class="csv-mapping">
+                <option value="">-- Select Column --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="map-length">Component Length <small>(e.g. Length)</small></label>
+              <select id="map-length" class="csv-mapping">
+                <option value="">-- Select Column --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="map-total-length">Raw Beam Size <small>(e.g. TotalLength)</small></label>
+              <select id="map-total-length" class="csv-mapping">
+                <option value="">-- Select Column --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="map-material">Material Group <small>(optional, e.g. material type)</small></label>
+              <select id="map-material" class="csv-mapping">
+                <option value="">-- None (pack all together) --</option>
+              </select>
+              <small>Leave blank for testing.</small>
+            </div>
+          </div>
+
+          <hr style="margin: 12px 0;">
+          <p style="margin:4px 0 2px; font-weight:600; font-size:13px; color:var(--muted);">Comparison &amp; Settings</p>
+          <div class="mapping-grid">
+            <div class="form-group">
+              <label for="map-old-waste">Previous Waste <small>(e.g. RemainingLength, optional)</small></label>
+              <select id="map-old-waste" class="csv-mapping">
+                <option value="">-- None --</option>
+              </select>
+              <small>Map this to compare our optimisation against the original cutting plan.</small>
+            </div>
+          </div>
+
+          <button id="btn-submit" class="primary-btn" style="margin-top:8px;">Run Optimisation</button>
         </div>
-
-        <div class="form-group">
-          <label>Measurement Units:</label>
-          <select id="units">
-            <option value="mm">Millimeters (mm)</option>
-            <option value="cm">Centimeters (cm)</option>
-            <option value="m">Meters (m)</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Saw Blade Width (mm):</label>
-          <input type="number" id="kerf" value="3.0" step ="0.1" min="0">
-          <small>Standard shipyard blade kerf is 3.0mm.</small>
-        </div>
-
-        <div class="form-group">
-          <label>Minimum Reusable Length (mm):</label>
-          <input type="number" id="min-remnant" value="500" min="0">
-          <small>Pieces shorter than this are logged as waste.</small>
-        </div>
-
-        <hr>
-
-        <h4>Column Mapping</h4>
-        <p><small>Match your CSV headers to the program's requirements.</small></p>
-
-        <div class="form-group">
-          <label>Component ID (E.g. ItemNumber):</label>
-          <select id="map-id" class="csv-mapping">
-            <option value="">-- Select Column --</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Component Length (E.g. Length):</label>
-          <select id="map-length" class="csv-mapping">
-            <option value="">-- Select Column --</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Raw Beam Size (E.g. TotalLength):</label>
-          <select id="map-total-length" class="csv-mapping">
-            <option value="">-- Select Column --</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Nest/Material Group (E.g. NestID):</label>
-          <select id="map-material" class="csv-mapping">
-            <option value="">-- Select Column --</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Old Waste Record (E.g. RemainingLength):</label>
-          <select id="map-old-waste" class="csv-mapping">
-            <option value="">-- Select Column (Optional) --</option>
-          </select>
-          <small>Used to compare the results against previous efficiency.</small>
-        </div>
-
-        <hr>
-
-        <div class="form-group">
-          <label>Optimisation Priority:</label>
-          <select id="priority">
-            <option value="waste">Minimum Material Waste</option>
-            <option value="speed">Fastest Cutting Time</option>
-          </select>
-        </div>
-
-        <hr>
-
-        <button id="btn-submit" class="primary-btn">Run Optimisation</button>
       </section>
+
+      <section id="results-section" style="display:none;"></section>
     </div>
 
-    <script src="../js/sidenav.js"></script>
-    <script src="../js/upload_handler.js"></script>
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/lib/chart.umd.min.js"></script>
+    <script src="../js/pages/dashboard.js"></script>
   </body>
 </html>

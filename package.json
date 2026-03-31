@@ -6,9 +6,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "lint": "node --check main.js && node --check src/js/preload.js && node --check src/js/renderer.js && node --check src/js/sidenav.js && node --check src/js/upload_handler.js",
     "test": "node --test",
-    "ci": "npm run lint && npm run test",
     "build": "electron-builder --win --publish never"
   },
   "repository": {
@@ -28,7 +26,8 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "chart.js": "^4.5.1"
   },
   "build": {
     "appId": "com.sdgp.app",

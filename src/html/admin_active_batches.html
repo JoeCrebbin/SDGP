@@ -1,14 +1,34 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Grant Vessels - Active Batches</title>
+    <title>Grant Vessels - All Batches</title>
     <link rel="stylesheet" href="../css/styles.css">
   </head>
   <body>
     <div id="sidenav-container"></div>
     <div id="main-content">
-      <h1>Active Batches</h1>
+      <h1>All Batches</h1>
+      <p>View and search optimisation batches across all users.</p>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px;">
+          <input type="text" id="batch-search" placeholder="Search by batch name, user or date..." style="max-width:300px;">
+          <button class="secondary-btn" id="batch-search-btn">Search</button>
+        </div>
+        <table id="batches-table">
+          <thead>
+            <tr><th>Batch Name</th><th>User</th><th>Waste %</th><th>Date</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="batches-body">
+            <tr><td colspan="5">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <section id="batch-detail-section" style="display:none;"></section>
     </div>
-    <script src="../js/sidenav.js"></script>
+    <script src="../js/components/sidenav.js"></script>
+    <script src="../js/lib/chart.umd.min.js"></script>
+    <script src="../js/admin/batches.js"></script>
   </body>
 </html>
