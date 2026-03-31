@@ -12,13 +12,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const usersBody = document.getElementById('users-body');
     const msg = document.getElementById('admin-message');
     const allUsersTitle = document.getElementById('all-users-title');
+    const authState = await window.authAPI.checkAuth();
+    const canAssignAdmin = authState?.isManager === true;
+
+    function buildRoleOptions(selectedRole) {
+        const current = String(selectedRole || 'user').toLowerCase();
+        const adminOption = canAssignAdmin ? '<option value="admin">Admin</option>' : '';
+        const managerOption = canAssignAdmin ? '<option value="manager">Manager</option>' : '';
+        return `
+            <option value="user" ${current === 'user' ? 'selected' : ''}>User</option>
+            ${adminOption.replace('>', current === 'admin' ? ' selected>' : '>')}
+            ${managerOption.replace('>', current === 'manager' ? ' selected>' : '>')}
+        `;
+    }
 
     // fetch all users and populate both tables - pending approvals and all users
     async function loadUsers() {
         try {
             const response = await window.adminAPI.listUsers();
             if (!response.success) {
-                usersBody.innerHTML = '<tr><td colspan="5">Failed to load users.</td></tr>';
+                usersBody.innerHTML = '<tr><td colspan="6">Failed to load users.</td></tr>';
                 return;
             }
 
@@ -31,13 +44,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // pending approvals table
             if (pending.length === 0) {
-                pendingBody.innerHTML = '<tr><td colspan="2">No pending approvals.</td></tr>';
+                pendingBody.innerHTML = '<tr><td colspan="3">No pending approvals.</td></tr>';
             } else {
                 pendingBody.innerHTML = '';
                 for (const user of pending) {
                     const row = document.createElement('tr');
+                    const pendingRole = String(user.role || 'user').toLowerCase();
                     row.innerHTML = `
                         <td>${escapeHtml(user.email)}</td>
+                        <td>
+                            <select class="pending-role-select" data-id="${user.id}" style="width:auto; min-width:120px;">
+                                ${buildRoleOptions(pendingRole)}
+                            </select>
+                        </td>
                         <td>
                             <button class="primary-btn approve-btn" data-id="${user.id}" style="padding:5px 12px;">Approve</button>
                             <button class="danger-btn reject-btn" data-id="${user.id}" style="padding:5px 12px;">Reject</button>
@@ -51,17 +70,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             usersBody.innerHTML = '';
             for (const user of all) {
                 const row = document.createElement('tr');
-                const role = user.is_admin === 1 ? 'Admin' : 'User';
+                const role = String(user.role || (user.is_admin === 1 ? 'admin' : 'user')).toLowerCase();
                 const status = user.is_approved === 1 ? 'Approved' : 'Pending';
                 // cant delete admin accounts from the UI (safety thing)
                 const actions = `<button class="secondary-btn view-batches-btn" data-id="${user.id}" data-email="${escapeHtml(user.email)}" style="padding:5px 12px;">Batches</button> ` +
-                    (user.is_admin === 1 ? '' : `<button class="danger-btn delete-user-btn" data-id="${user.id}" style="padding:5px 12px;">Delete</button>`);
+                    ((role === 'admin' || role === 'manager') && !canAssignAdmin
+                        ? ''
+                        : `<button class="danger-btn delete-user-btn" data-id="${user.id}" style="padding:5px 12px;">Delete</button>`);
+                const roleEditor = user.is_approved === 1
+                    ? `<select class="role-select" data-id="${user.id}" style="width:auto; min-width:120px;">${buildRoleOptions(role)}</select>
+                       <button class="secondary-btn update-role-btn" data-id="${user.id}" style="padding:5px 10px; margin-left:6px;">Update</button>`
+                    : '<span style="color:var(--muted);">Set on approval</span>';
                 row.innerHTML = `
                     <td>${user.id}</td>
                     <td>${escapeHtml(user.email)}</td>
-                    <td>${role}</td>
+                    <td>${role.charAt(0).toUpperCase() + role.slice(1)}</td>
                     <td>${status}</td>
                     <td>${actions}</td>
+                    <td>${roleEditor}</td>
                 `;
                 usersBody.appendChild(row);
             }
@@ -69,7 +95,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             // wire up all the buttons
             document.querySelectorAll('.approve-btn').forEach(btn => {
                 btn.addEventListener('click', async () => {
-                    const res = await window.adminAPI.approveUser(parseInt(btn.dataset.id));
+                    const userId = parseInt(btn.dataset.id);
+                    const roleSelect = document.querySelector(`.pending-role-select[data-id="${userId}"]`);
+                    const selectedRole = roleSelect ? roleSelect.value : 'user';
+                    const res = await window.adminAPI.approveUser(userId, selectedRole);
                     showMsg(res.success ? 'User approved.' : (res.message || 'Failed.'), res.success);
                     if (res.success) loadUsers();
                 });
@@ -98,9 +127,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 btn.addEventListener('click', () => loadUserBatches(parseInt(btn.dataset.id), btn.dataset.email));
             });
 
+            document.querySelectorAll('.update-role-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const userId = parseInt(btn.dataset.id);
+                    const roleSelect = document.querySelector(`.role-select[data-id="${userId}"]`);
+                    const selectedRole = roleSelect ? roleSelect.value : 'user';
+                    const res = await window.adminAPI.updateUserRole(userId, selectedRole);
+                    showMsg(res.success ? 'Role updated.' : (res.message || 'Failed to update role.'), res.success);
+                    if (res.success) loadUsers();
+                });
+            });
+
         } catch (err) {
             console.error('Load users error:', err);
-            usersBody.innerHTML = '<tr><td colspan="5">Error loading users.</td></tr>';
+            usersBody.innerHTML = '<tr><td colspan="6">Error loading users.</td></tr>';
         }
     }
 

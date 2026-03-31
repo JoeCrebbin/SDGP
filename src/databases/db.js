@@ -29,6 +29,7 @@ db.exec(`
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE,
         password_hash TEXT,
+        role TEXT DEFAULT 'user',
         is_admin INTEGER DEFAULT 0,
         is_approved INTEGER DEFAULT 0
     );
@@ -162,6 +163,21 @@ try {
     db.exec('ALTER TABLE batches ADD COLUMN metrics_json TEXT');
 }
 
+try {
+    db.prepare('SELECT role FROM users LIMIT 1').get();
+} catch (e) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+}
+
+// backfill role for older databases that only used is_admin
+db.exec(`
+    UPDATE users
+    SET role = CASE
+        WHEN role IS NULL OR TRIM(role) = '' THEN CASE WHEN is_admin = 1 THEN 'admin' ELSE 'user' END
+        ELSE role
+    END
+`);
+
 // ---- Seed Data ----
 // Insert default accounts if they don't already exist (INSERT OR IGNORE).
 // Both use the bcrypt hash of "password" for initial setup.
@@ -169,19 +185,23 @@ const adminPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSk
 const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 
 const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (email, password_hash, is_admin, is_approved)
-    VALUES (?, ?, ?, 1)
+    INSERT OR IGNORE INTO users (email, password_hash, role, is_admin, is_approved)
+    VALUES (?, ?, ?, ?, 1)
 `)
 
-// admin account: admin@grantvessels.com / password
-insertUser.run('admin@grantvessels.com', adminPasswordHash, 1);
+// manager account: admin@grantvessels.com / password
+insertUser.run('admin@grantvessels.com', adminPasswordHash, 'manager', 1);
 // regular user: user@grantvessels.com / password
-insertUser.run('user@grantvessels.com', userPasswordHash, 0);
+insertUser.run('user@grantvessels.com', userPasswordHash, 'user', 0);
 
 // default global settings - these prefill on the dashboard
 const insertSetting = db.prepare('INSERT OR IGNORE INTO global_settings (key, value) VALUES (?, ?)');
 insertSetting.run('default_kerf_mm', '3.0'); // saw blade width
 insertSetting.run('default_min_remnant_mm', '3'); // minimum usable offcut
 insertSetting.run('max_beams_display', '50'); // max beams shown in layout
+
+// ensure the default admin seed is always manager on upgraded databases
+db.prepare("UPDATE users SET role = 'manager', is_admin = 1, is_approved = 1 WHERE email = ?")
+    .run('admin@grantvessels.com');
 
 module.exports = db;

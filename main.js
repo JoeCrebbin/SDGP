@@ -53,13 +53,32 @@ function runOptimisationAsync(params) {
 // quick helper to check if someone is an admin
 async function isAdmin(userID) {
   try {
-    const user = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userID);
-    return user ? user.is_admin === 1 : false;
+    const user = db.prepare('SELECT role, is_admin FROM users WHERE id = ?').get(userID);
+    if (!user) return false;
+    const role = String(user.role || '').toLowerCase();
+    return role === 'admin' || role === 'manager' || user.is_admin === 1;
   }
   catch (err) {
     console.error('Admin Check Error:', err);
     return false;
   }
+}
+
+async function isManager(userID) {
+  try {
+    const user = db.prepare('SELECT role FROM users WHERE id = ?').get(userID);
+    return user ? String(user.role || '').toLowerCase() === 'manager' : false;
+  } catch (err) {
+    console.error('Manager Check Error:', err);
+    return false;
+  }
+}
+
+function normalizeRole(role) {
+  const value = String(role || 'user').trim().toLowerCase();
+  if (value === 'manager') return 'manager';
+  if (value === 'admin') return 'admin';
+  return 'user';
 }
 
 // logs stuff to the activity_logs table so admins can see what happened
@@ -103,14 +122,17 @@ ipcMain.handle('auth:check-auth', async () => {
   try {
     if(!loggedInUserID) return {
       authenticated: false,
-      isAdmin: false
+      isAdmin: false,
+      isManager: false
     };
 
     const adminStatus = await isAdmin(loggedInUserID);
+    const managerStatus = await isManager(loggedInUserID);
 
     return {
       authenticated: true,
-      isAdmin: adminStatus === true
+      isAdmin: adminStatus === true,
+      isManager: managerStatus === true
     };
   }
   catch (err) {
@@ -151,7 +173,9 @@ ipcMain.handle('auth:login', async (event, { email, password }) => {
     logActivity(loggedInUserID, 'login', email);
     return {
       success: true,
-      isAdmin: user.is_admin === 1
+      isAdmin: await isAdmin(loggedInUserID),
+      isManager: await isManager(loggedInUserID),
+      role: normalizeRole(user.role)
     };
   }
   catch (err) {
@@ -170,8 +194,8 @@ ipcMain.handle('auth:register', async (event, { email, password }) => {
     const hash = await bcrypt.hash(password, 10);
 
     const stmt = db.prepare(`
-      INSERT INTO users (email, password_hash, is_admin, is_approved)
-      VALUES (?, ?, 0, 0)
+      INSERT INTO users (email, password_hash, role, is_admin, is_approved)
+      VALUES (?, ?, 'user', 0, 0)
     `);
     stmt.run(email, hash);
 
@@ -464,11 +488,13 @@ ipcMain.handle('user:delete-account', async (event, { password }) => {
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
 
-    const user = db.prepare('SELECT password_hash, is_admin FROM users WHERE id = ?').get(loggedInUserID);
+    const user = db.prepare('SELECT password_hash, role, is_admin FROM users WHERE id = ?').get(loggedInUserID);
     if (!user) return { success: false, message: 'User not found' };
 
-    // dont let admins delete themselves through the normal UI
-    if (user.is_admin === 1) return { success: false, message: 'Admin accounts cannot be deleted this way' };
+    // dont let privileged accounts delete themselves through the normal UI
+    if (normalizeRole(user.role) === 'admin' || normalizeRole(user.role) === 'manager' || user.is_admin === 1) {
+      return { success: false, message: 'Admin or manager accounts cannot be deleted this way' };
+    }
 
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return { success: false, message: 'Password is incorrect' };
@@ -510,7 +536,14 @@ ipcMain.handle('user:delete-account', async (event, { password }) => {
 ipcMain.handle('admin:list-users', async () => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
-    const users = db.prepare('SELECT id, email, is_admin, is_approved FROM users ORDER BY id').all();
+    const users = db.prepare(
+      `SELECT id, email, role, is_admin, is_approved
+       FROM users
+       ORDER BY id`
+    ).all().map((u) => ({
+      ...u,
+      role: normalizeRole(u.role || (u.is_admin === 1 ? 'admin' : 'user'))
+    }));
     return { success: true, users };
   } catch (err) {
     console.error('Admin List Users Error:', err);
@@ -519,11 +552,21 @@ ipcMain.handle('admin:list-users', async () => {
 });
 
 // approve a pending user so they can actually log in
-ipcMain.handle('admin:approve-user', async (event, { userId }) => {
+ipcMain.handle('admin:approve-user', async (event, { userId, role }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
-    db.prepare('UPDATE users SET is_approved = 1 WHERE id = ?').run(userId);
-    logActivity(loggedInUserID, 'approve_user', `Approved user ID ${userId}`);
+    const requesterIsManager = await isManager(loggedInUserID);
+    const targetRole = normalizeRole(role);
+    if (targetRole === 'admin' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can assign Admin role' };
+    }
+    if (targetRole === 'manager' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can assign Manager role' };
+    }
+
+    const isAdminFlag = targetRole === 'admin' || targetRole === 'manager' ? 1 : 0;
+    db.prepare('UPDATE users SET is_approved = 1, role = ?, is_admin = ? WHERE id = ?').run(targetRole, isAdminFlag, userId);
+    logActivity(loggedInUserID, 'approve_user', `Approved user ID ${userId} as ${targetRole}`);
     return { success: true };
   } catch (err) {
     console.error('Admin Approve User Error:', err);
@@ -531,12 +574,48 @@ ipcMain.handle('admin:approve-user', async (event, { userId }) => {
   }
 });
 
+ipcMain.handle('admin:update-user-role', async (event, { userId, role }) => {
+  try {
+    if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
+    const requesterIsManager = await isManager(loggedInUserID);
+    const targetRole = normalizeRole(role);
+
+    if (targetRole === 'admin' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can assign Admin role' };
+    }
+    if (targetRole === 'manager' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can assign Manager role' };
+    }
+
+    const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId);
+    if (!targetUser) return { success: false, message: 'User not found' };
+    if (normalizeRole(targetUser.role) === 'manager' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can modify manager accounts' };
+    }
+
+    const isAdminFlag = targetRole === 'admin' || targetRole === 'manager' ? 1 : 0;
+    db.prepare('UPDATE users SET role = ?, is_admin = ? WHERE id = ?').run(targetRole, isAdminFlag, userId);
+    logActivity(loggedInUserID, 'update_user_role', `User ID ${userId} role changed to ${targetRole}`);
+    return { success: true };
+  } catch (err) {
+    console.error('Admin Update User Role Error:', err);
+    return { success: false, message: 'Failed to update role' };
+  }
+});
+
 // reject a pending user (basically just deletes them)
 ipcMain.handle('admin:reject-user', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
-    const target = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId);
-    if (target && target.is_admin === 1) return { success: false, message: 'Cannot delete an admin user' };
+    const requesterIsManager = await isManager(loggedInUserID);
+    const target = db.prepare('SELECT role, is_admin FROM users WHERE id = ?').get(userId);
+    const targetRole = normalizeRole(target?.role || (target?.is_admin === 1 ? 'admin' : 'user'));
+    if (targetRole === 'manager' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can delete manager users' };
+    }
+    if (targetRole === 'admin' && !requesterIsManager) {
+      return { success: false, message: 'Only managers can delete admin users' };
+    }
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
     logActivity(loggedInUserID, 'reject_user', `Rejected/deleted user ID ${userId}`);
     return { success: true };
@@ -550,9 +629,12 @@ ipcMain.handle('admin:reject-user', async (event, { userId }) => {
 ipcMain.handle('admin:delete-user', async (event, { userId }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
-    const target = db.prepare('SELECT is_admin, email FROM users WHERE id = ?').get(userId);
+    const requesterIsManager = await isManager(loggedInUserID);
+    const target = db.prepare('SELECT role, is_admin, email FROM users WHERE id = ?').get(userId);
     if (!target) return { success: false, message: 'User not found' };
-    if (target.is_admin === 1) return { success: false, message: 'Cannot delete an admin user' };
+    const targetRole = normalizeRole(target.role || (target.is_admin === 1 ? 'admin' : 'user'));
+    if (targetRole === 'manager' && !requesterIsManager) return { success: false, message: 'Only managers can delete manager users' };
+    if (targetRole === 'admin' && !requesterIsManager) return { success: false, message: 'Only managers can delete admin users' };
 
     const deleteAll = db.transaction(() => {
       const batchRows = db.prepare('SELECT id, output_csv_path FROM batches WHERE user_id = ?').all(userId);
