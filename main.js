@@ -199,9 +199,10 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     if (!components || components.length === 0) return { success: false, message: 'No components provided' };
+    const priorityMode = priority === 'speed' ? 'speed' : 'waste';
 
-    // run BFD in a worker thread so it doesnt block the UI
-    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: 'waste' });
+    // run optimisation in a worker thread so it doesnt block the UI
+    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: priorityMode });
 
     // build the output CSV - one row per component showing which beam it got put on
     const csvRows = ['ItemNumber,NestID,Length_mm,AssignedBeam_mm,BeamIndex,WasteOnBeam_mm,OldWaste_mm'];
