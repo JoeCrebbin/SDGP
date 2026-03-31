@@ -88,6 +88,13 @@
           <p style="margin:4px 0 2px; font-weight:600; font-size:13px; color:var(--muted);">Comparison &amp; Settings</p>
           <div class="mapping-grid">
             <div class="form-group">
+              <label for="map-nest-id">Nest / Group ID <small>(e.g. NestID)</small></label>
+              <select id="map-nest-id" class="csv-mapping">
+                <option value="">-- None (single group) --</option>
+              </select>
+              <small>Group components by nest so different groups are optimised separately.</small>
+            </div>
+            <div class="form-group">
               <label for="map-old-waste">Previous Waste <small>(e.g. RemainingLength, optional)</small></label>
               <select id="map-old-waste" class="csv-mapping">
                 <option value="">-- None --</option>
@@ -112,6 +119,7 @@
     </div>
 
     <script src="../js/components/sidenav.js"></script>
+    <script src="../js/components/batch-detail.js"></script>
     <script src="../js/lib/chart.umd.min.js"></script>
     <script src="../js/pages/dashboard.js"></script>
   </body>
