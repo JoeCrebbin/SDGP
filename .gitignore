@@ -146,5 +146,8 @@ node_modules/
 # Database file
 src/databases/*.db
 
+# Application-generated output files
+output/
+
 # MacOS files
 .DS_Store

@@ -44,6 +44,22 @@ test('priority mode changes selected solver', () => {
   assert.notEqual(waste.solver, speed.solver);
 });
 
+test('waste priority chooses smallest fitting stock length', () => {
+  const result = runOptimisation({
+    batchName: 'smallest-stock-check',
+    kerfMm: 3,
+    minRemnantMm: 0,
+    priority: 'waste',
+    components: [
+      { itemNumber: 'A', lengthMm: 5900, beamType: 6000, nestId: 'N1' }
+    ]
+  });
+
+  const beam = result.results[0].beams[0];
+  assert.equal(beam.stockLengthMm, 6000);
+  assert.equal(result.grandWastePct, (100 / 6000) * 100);
+});
+
 test('secure export roundtrip works and wrong password fails', () => {
   const payload = {
     batchName: 'secure',
