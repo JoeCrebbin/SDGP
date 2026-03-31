@@ -13,7 +13,7 @@
   *
   * Important: kerf (the width the saw blade eats up) is NOT added to the
   * first component on each beam because theres no cut needed to place it.
-  * We spent ages debugging this lol.
+  * We spent ages debugging this.
 */
 
 // Picks the smallest beam that fits - used by BFD to keep waste down
@@ -61,6 +61,29 @@ function pickLargestStockLength(stockLengths, requiredMm) {
  * with the least space left that still fits. Packs everything really
  * tightly which is what the shipyard wants.
  */
+function pickStockLengthWithLookahead(stockLengths, requiredMm, remainingComponents, kerfMm) {
+  const sorted = [...stockLengths].sort((a, b) => a - b);
+
+  // Prefer the smallest stock that can fit this component and at least one future component.
+  for (const L of sorted) {
+    if (L < requiredMm) continue;
+
+    const availableAfterFirst = L - requiredMm - kerfMm;
+    if (availableAfterFirst >= 0 && remainingComponents.some(c => c.lengthMm <= availableAfterFirst)) {
+      return L;
+    }
+  }
+
+  // Fallback to the smallest stock that fits if no lookahead candidate found.
+  for (const L of sorted) {
+    if (L >= requiredMm) return L;
+  }
+
+  throw new Error(
+    `Required ${requiredMm}mm exceeds max stock length ${Math.max(...stockLengths)}mm`
+  );
+}
+
 function packBestFitDecreasing(components, stockLengths, kerfMm) {
   // Sort components longest-first for better packing
   const sorted = [...components].sort((a, b) => {
@@ -69,7 +92,8 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
   });
   const beams = [];
 
-  for (const comp of sorted) {
+  for (let i = 0; i < sorted.length; i++) {
+    const comp = sorted[i];
     let bestIdx = -1;
     let bestRemaining = null;
 
@@ -89,21 +113,26 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
 
     // Nothing fits - grab a new beam (no kerf on first piece)
     if (bestIdx === -1) {
-      const required = comp.lengthMm + kerfMm;
-      const L = pickLargestStockLength(stockLengths, required);
+      const required = comp.lengthMm;
+      const remainingComponents = sorted.slice(i + 1);
+      const L = pickStockLengthWithLookahead(stockLengths, required, remainingComponents, kerfMm);
       beams.push({ stockLengthMm: L, components: [], usedMm: 0, wasteMm: 0 });
       bestIdx = beams.length - 1;
     }
 
-    // Place it
+    // Place it - no kerf for the first component on a beam
     const beam = beams[bestIdx];
+    const isFirst = beam.components.length === 0;
     beam.components.push(comp);
-    beam.usedMm += comp.lengthMm + kerfMm;
+    beam.usedMm += comp.lengthMm + (isFirst ? 0 : kerfMm);
   }
 
-  // Calculate waste on each beam (stock length minus what was used)
+  // Calculate kerf and waste on each beam
   for (const beam of beams) {
-    beam.wasteMm = Math.max(0, beam.stockLengthMm - beam.usedMm);
+    const sumComponents = beam.components.reduce((s, c) => s + c.lengthMm, 0);
+    beam.kerfMm = Math.max(0, (beam.components.length - 1) * kerfMm);
+    beam.wasteMm = Math.max(0, beam.stockLengthMm - sumComponents - beam.kerfMm);
+    beam.totalWasteMm = beam.kerfMm + beam.wasteMm;
   }
 
   return beams;
@@ -149,18 +178,21 @@ function packFirstFitDecreasing(components, stockLengths, kerfMm) {
 
     // No existing beam fits - open a new one with the LARGEST stock
     if (!placed) {
-      const required = comp.lengthMm + kerfMm;
+      const required = comp.lengthMm;
       const L = pickLargestStockLength(stockLengths, required);
       const newBeam = { stockLengthMm: L, components: [], usedMm: 0, wasteMm: 0 };
       newBeam.components.push(comp);
-      newBeam.usedMm = comp.lengthMm + kerfMm;
+      newBeam.usedMm = comp.lengthMm;
       beams.push(newBeam);
     }
   }
 
-  // Calculate waste
+  // Calculate kerf and waste on each beam
   for (const beam of beams) {
-    beam.wasteMm = Math.max(0, beam.stockLengthMm - beam.usedMm);
+    const sumComponents = beam.components.reduce((s, c) => s + c.lengthMm, 0);
+    beam.kerfMm = Math.max(0, (beam.components.length - 1) * kerfMm);
+    beam.wasteMm = Math.max(0, beam.stockLengthMm - sumComponents - beam.kerfMm);
+    beam.totalWasteMm = beam.kerfMm + beam.wasteMm;
   }
 
   return beams;
@@ -210,6 +242,7 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
   let grandTotalStock = 0;
   let grandTotalCut = 0;
   let grandTotalWaste = 0;
+  let grandTotalKerf = 0;
   let grandTotalBeams = 0;
   let grandReusableRemnantMm = 0;
   let grandDiscardedWasteMm = 0;
@@ -220,11 +253,13 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     let totalStock = 0;
     let totalCut = 0;
     let totalWaste = 0;
+    let totalKerf = 0;
 
     for (const beam of beams) {
       totalStock += beam.stockLengthMm;
       totalCut += beam.components.reduce((sum, c) => sum + c.lengthMm, 0);
-      totalWaste += beam.wasteMm;
+      totalKerf += beam.kerfMm || 0;
+      totalWaste += (beam.totalWasteMm != null ? beam.totalWasteMm : beam.wasteMm);
 
       if (beam.wasteMm >= minRemnantMm) {
         grandReusableRemnantMm += beam.wasteMm;
@@ -245,6 +280,7 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     grandTotalStock += totalStock;
     grandTotalCut += totalCut;
     grandTotalWaste += totalWaste;
+    grandTotalKerf += totalKerf;
     grandTotalBeams += beams.length;
   }
 
@@ -256,6 +292,7 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     grandTotalStockMm: grandTotalStock,
     grandTotalCutMm: grandTotalCut,
     grandTotalWasteMm: grandTotalWaste,
+    grandTotalKerfMm: grandTotalKerf,
     grandReusableRemnantMm,
     grandDiscardedWasteMm,
     grandTotalBeams,

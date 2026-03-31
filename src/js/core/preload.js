@@ -40,10 +40,6 @@ contextBridge.exposeInMainWorld('historyAPI', {
   trend: () => ipcRenderer.invoke('history:trend')
 });
 
-contextBridge.exposeInMainWorld('exportAPI', {
-  securePackage: (payload) => ipcRenderer.invoke('export:secure-package', payload)
-});
-
 contextBridge.exposeInMainWorld('nfrAPI', {
   performanceReport: () => ipcRenderer.invoke('nfr:performance-report')
 });

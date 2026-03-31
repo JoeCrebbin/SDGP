@@ -31,7 +31,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const response = await window.adminAPI.listUsers();
             if (!response.success) {
-                usersBody.innerHTML = '<tr><td colspan="6">Failed to load users.</td></tr>';
+                const message = response.message || 'Failed to load users.';
+                usersBody.innerHTML = `<tr><td colspan="5">${escapeHtml(message)}</td></tr>`;
+                if (message.toLowerCase().includes('unauthorized')) {
+                    msg.textContent = 'Admin access required. Please log in as an admin.';
+                    msg.style.color = 'var(--danger)';
+                }
                 return;
             }
 
@@ -202,30 +207,73 @@ document.addEventListener('DOMContentLoaded', async () => {
             detailSection.style.display = 'block';
             detailSection.innerHTML = '';
 
-            // summary stats
-            detailSection.insertAdjacentHTML('beforeend', `
-                <div class="card">
-                    <h3 style="margin-top:0;">${escapeHtml(batch.batch_name || 'Unnamed')}</h3>
+            if (csvContent && csvContent.trim()) {
+                const parsed = window.batchDetailHelpers.parseSavedCsv(csvContent);
+                const safeBatchName = batch.batch_name || 'Unnamed';
+
+                // standard card layout - result summary
+                detailSection.insertAdjacentHTML('beforeend', `
                     <div class="stats-row">
                         <div class="stat-card">
-                            <p class="stat-value">${batch.total_wastage_percent != null ? batch.total_wastage_percent.toFixed(2) + '%' : 'N/A'}</p>
-                            <p class="stat-label">Waste Percentage</p>
+                            <p class="stat-value">${parsed.totalBeams}</p>
+                            <p class="stat-label">Beams Used</p>
                         </div>
                         <div class="stat-card">
-                            <p class="stat-value">${batch.created_at ? new Date(batch.created_at).toLocaleDateString() : 'N/A'}</p>
-                            <p class="stat-label">Created</p>
+                            <p class="stat-value">${parsed.totalStockMm.toLocaleString()} mm</p>
+                            <p class="stat-label">Total Stock</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-value">${parsed.totalCutMm.toLocaleString()} mm</p>
+                            <p class="stat-label">Material Cut</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-value">${parsed.totalWasteMm.toLocaleString()} mm</p>
+                            <p class="stat-label">Total Waste</p>
+                        </div>
+                        <div class="stat-card">
+                            <p class="stat-value">${parsed.wastePct.toFixed(2)}%</p>
+                            <p class="stat-label">Waste Percentage</p>
                         </div>
                     </div>
-                </div>
-            `);
+                `);
 
-            // CSV table
-            if (csvContent && csvContent.trim()) {
-                detailSection.insertAdjacentHTML('beforeend', buildCsvViewer(csvContent, batch.batch_name || 'batch'));
+                // Cutting layout and CSV table
+                detailSection.insertAdjacentHTML('beforeend', window.batchDetailHelpers.buildBeamLayout(parsed.beams, safeBatchName));
+                const dlLayoutBtn = document.getElementById('btn-download-layout');
+                if (dlLayoutBtn) dlLayoutBtn.addEventListener('click', () => window.batchDetailHelpers.downloadLayoutAsPdf(safeBatchName));
+
+                detailSection.insertAdjacentHTML('beforeend', window.batchDetailHelpers.buildCsvViewer(csvContent, safeBatchName));
+
                 const dlBtn = detailSection.querySelector('#btn-download-csv');
                 if (dlBtn) {
                     dlBtn.addEventListener('click', () => downloadCsv(csvContent, batch.batch_name || 'batch'));
                 }
+
+                // Charts for waste comparison and utilisation
+                const chartData = parseChartData(csvContent, parsed);
+                detailSection.insertAdjacentHTML('beforeend', `
+                    <div class="card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <h3 style="margin:0;">Waste Comparison</h3>
+                            <button class="secondary-btn" id="btn-dl-chart-bar">Download Chart</button>
+                        </div>
+                        <div class="chart-container" style="height:360px;"><canvas id="chart-bar"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <h3 style="margin:0;">Material Utilisation</h3>
+                            <button class="secondary-btn" id="btn-dl-chart-pie">Download Chart</button>
+                        </div>
+                        <div class="chart-container" style="height:360px;"><canvas id="chart-pie"></canvas></div>
+                    </div>
+                `);
+
+                buildSingleChart(chartData, 'chart-bar', 'overview-bar');
+                buildSingleChart(chartData, 'chart-pie', 'overview-pie');
+
+                document.getElementById('btn-dl-chart-bar').addEventListener('click', () => downloadChartAsPng('chart-bar', `${safeBatchName}_waste_comparison.png`));
+                document.getElementById('btn-dl-chart-pie').addEventListener('click', () => downloadChartAsPng('chart-pie', `${safeBatchName}_utilisation_pie.png`));
+
             } else {
                 detailSection.insertAdjacentHTML('beforeend', '<div class="card"><p>No CSV data available for this batch.</p></div>');
             }
@@ -243,23 +291,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // builds a scrollable CSV table
-    function buildCsvViewer(csvContent, batchName) {
-        const lines = csvContent.split('\n').filter(l => l.trim());
-        if (lines.length === 0) return '';
-        const headers = lines[0].split(',');
-        let tableHtml = '<thead><tr>';
-        for (const h of headers) tableHtml += `<th>${escapeHtml(h)}</th>`;
-        tableHtml += '</tr></thead><tbody>';
-        for (let i = 1; i < lines.length; i++) {
-            const cells = lines[i].split(',');
-            tableHtml += '<tr>';
-            for (const c of cells) tableHtml += `<td>${escapeHtml(c)}</td>`;
-            tableHtml += '</tr>';
-        }
-        tableHtml += '</tbody>';
-        return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3 style="margin:0;">Output CSV</h3><button class="secondary-btn" id="btn-download-csv">Download CSV</button></div><div class="csv-viewer"><table>${tableHtml}</table></div></div>`;
-    }
 
     // CSV download using blob (this page still uses the old method)
     function downloadCsv(csvContent, batchName) {
@@ -272,6 +303,155 @@ document.addEventListener('DOMContentLoaded', async () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    // Charts helper: rebuild from saved batch data
+    function parseChartData(csvContent, parsed) {
+        const data = {
+            optimisedWasteMm: parsed.totalWasteMm,
+            totalStockMm: parsed.totalStockMm,
+            totalWasteMm: parsed.totalWasteMm,
+            totalCutMm: parsed.totalCutMm,
+            oldWasteMm: null
+        };
+
+        const lines = csvContent.split('\n').filter(l => l.trim());
+        if (lines.length > 1) {
+            const headers = lines[0].split(',');
+            const oldWasteIdx = headers.indexOf('OldWaste_mm');
+            const beamIndexIdx = headers.indexOf('BeamIndex');
+
+            if (oldWasteIdx >= 0) {
+                let totalOldWaste = 0;
+                let hasAnyOld = false;
+                const oldWastePerBeam = {};
+
+                for (let i = 1; i < lines.length; i++) {
+                    const cells = lines[i].split(',');
+                    const bi = cells[beamIndexIdx];
+                    const oldW = parseFloat(cells[oldWasteIdx]) || 0;
+                    if (oldW > 0) {
+                        hasAnyOld = true;
+                        if (!(bi in oldWastePerBeam) || oldW > oldWastePerBeam[bi]) {
+                            oldWastePerBeam[bi] = oldW;
+                        }
+                    }
+                }
+
+                if (hasAnyOld) {
+                    for (const v of Object.values(oldWastePerBeam)) totalOldWaste += v;
+                    data.oldWasteMm = totalOldWaste;
+                }
+            }
+        }
+
+        return data;
+    }
+
+    const pieDataLabelsPlugin = {
+        id: 'pieDataLabels',
+        afterDraw(chart) {
+            const { ctx } = chart;
+            const dataset = chart.data.datasets[0];
+            const meta = chart.getDatasetMeta(0);
+            const total = dataset.data.reduce((a, b) => a + b, 0);
+            if (total === 0) return;
+            ctx.save();
+            ctx.font = 'bold 12px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            meta.data.forEach((element, i) => {
+                const pct = ((dataset.data[i] / total) * 100).toFixed(1);
+                const midAngle = (element.startAngle + element.endAngle) / 2;
+                const outerRadius = element.outerRadius;
+                const x = element.x + Math.cos(midAngle) * (outerRadius + 20);
+                const y = element.y + Math.sin(midAngle) * (outerRadius + 20);
+                ctx.fillStyle = '#111';
+                ctx.fillText(`${pct}%`, x, y);
+            });
+            ctx.restore();
+        }
+    };
+
+    function buildSingleChart(chartData, canvasId, chartType) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        let config;
+
+        if (chartType === 'overview-bar') {
+            const labels = ['Waste (mm)'];
+            const datasets = [{
+                label: 'Optimised Waste',
+                data: [chartData.optimisedWasteMm],
+                backgroundColor: 'rgba(0, 120, 212, 0.75)',
+                borderColor: 'rgba(0, 120, 212, 1)',
+                borderWidth: 1,
+                barPercentage: 0.5
+            }];
+            if (chartData.oldWasteMm !== null) {
+                datasets.push({
+                    label: 'Previous Waste',
+                    data: [chartData.oldWasteMm],
+                    backgroundColor: 'rgba(220, 38, 38, 0.6)',
+                    borderColor: 'rgba(220, 38, 38, 1)',
+                    borderWidth: 1,
+                    barPercentage: 0.5
+                });
+            }
+            config = {
+                type: 'bar',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Waste Comparison' }
+                    },
+                    scales: { y: { beginAtZero: true, title: { display: true, text: 'mm' } } }
+                }
+            };
+        } else if (chartType === 'overview-pie') {
+            const total = chartData.totalCutMm + chartData.totalWasteMm;
+            const usedPct = total > 0 ? ((chartData.totalCutMm / total) * 100).toFixed(1) : '0';
+            const wastePct = total > 0 ? ((chartData.totalWasteMm / total) * 100).toFixed(1) : '0';
+            config = {
+                type: 'pie',
+                data: {
+                    labels: [`Material Used (${usedPct}%)`, `Waste (${wastePct}%)`],
+                    datasets: [{
+                        data: [chartData.totalCutMm, chartData.totalWasteMm],
+                        backgroundColor: ['rgba(0, 120, 212, 0.75)', 'rgba(220, 38, 38, 0.6)'],
+                        borderColor: ['rgba(0, 120, 212, 1)', 'rgba(220, 38, 38, 1)'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        title: { display: true, text: 'Material Utilisation' },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const t = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    return `${ctx.label}: ${formatMm(ctx.raw)} (${((ctx.raw / t) * 100).toFixed(1)}%)`;
+                                }
+                            }
+                        }
+                    }
+                },
+                plugins: [pieDataLabelsPlugin]
+            };
+        }
+
+        if (config) new Chart(canvas.getContext('2d'), config);
+    }
+
+    function formatMm(mm) {
+        return `${Number(mm).toFixed(0)} mm`;
     }
 
     // show a success/error message

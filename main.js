@@ -414,51 +414,6 @@ ipcMain.handle('nfr:performance-report', async () => {
   }
 });
 
-ipcMain.handle('export:secure-package', async (event, payload) => {
-  const exportStart = nowMs();
-  let exportSucceeded = false;
-  try {
-    if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
-    const password = typeof payload?.password === 'string' ? payload.password : '';
-    if (password.length < 8) {
-      return { success: false, message: 'Export password must be at least 8 characters' };
-    }
-
-    const safeBatch = String(payload?.batchName || 'batch').replace(/[^a-zA-Z0-9_-]/g, '_') || 'batch';
-    const exportData = {
-      generatedAt: new Date().toISOString(),
-      generatedByUserId: loggedInUserID,
-      batchName: payload?.batchName || safeBatch,
-      cleanedCsv: payload?.cleanedCsv || '',
-      validationReport: payload?.validationReport || null,
-      optimisationSummary: payload?.optimisationSummary || null,
-      chartImageBase64: payload?.chartImageBase64 || null,
-      trendImageBase64: payload?.trendImageBase64 || null
-    };
-
-    const encrypted = buildEncryptedExport(exportData, password);
-    const filename = `${safeBatch}_${Date.now()}_secure_export.gve`;
-    const filePath = path.join(outputDir, filename);
-    fs.writeFileSync(filePath, JSON.stringify(encrypted, null, 2), 'utf8');
-    logActivity(loggedInUserID, 'secure_export', filename);
-
-    exportSucceeded = true;
-    return {
-      success: true,
-      filePath,
-      filename,
-      integritySha256: encrypted.integritySha256
-    };
-  } catch (err) {
-    console.error('Secure Export Error:', err);
-    return { success: false, message: `Failed to create secure export package: ${err.message || 'unknown error'}` };
-  } finally {
-    recordPerformance('export', payload?.validationReport?.totalRows ?? 0, nowMs() - exportStart, exportSucceeded);
-  }
-});
-
-// ============================================================
-
 // User account stuff - change password, delete account
 
 // change password (need to verify current one first obviously)

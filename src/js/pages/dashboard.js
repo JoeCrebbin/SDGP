@@ -153,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const mapId = document.getElementById('map-id').value;
         const mapLength = document.getElementById('map-length').value;
         const mapTotalLength = document.getElementById('map-total-length').value;
+        const mapNestId = document.getElementById('map-nest-id').value;
         const mapOldWaste = document.getElementById('map-old-waste').value;
         const priority = document.getElementById('priority').value;
 
@@ -206,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemNumber = cols[parseInt(mapId)] || '';
             const rawLength = parseFloat(cols[parseInt(mapLength)]);
             const rawBeamType = parseFloat(cols[parseInt(mapTotalLength)]);
-            const nestId = 'all';
+            const nestId = mapNestId !== '' ? (cols[parseInt(mapNestId)] || 'all').trim() : 'all';
 
             if (!itemNumber) {
                 rejections.push({ row: i + 1, reason: 'Missing required Component ID' });
@@ -230,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 continue;
             }
 
-            const duplicateKey = `${itemNumber}::${nestId}::${lengthMm}`;
+            const duplicateKey = `${itemNumber}::${nestId}::${lengthMm}::${beamTypeMm}::${i}`;
             if (seenKeys.has(duplicateKey)) {
                 rejections.push({ row: i + 1, reason: 'Duplicate component row detected' });
                 continue;
@@ -258,12 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (components.length === 0) { msg.textContent = 'No valid components found. Check your column mappings.'; msg.style.color = 'var(--danger)'; return; }
 
         if (rejections.length > 0) {
-            const proceed = window.confirm(`Validation found ${rejections.length} rejected rows. Continue with ${components.length} accepted rows?`);
-            if (!proceed) {
-                msg.textContent = 'Optimisation cancelled. Fix CSV issues and try again.';
-                msg.style.color = 'var(--danger)';
-                return;
-            }
+            console.log(`Validation: ${rejections.length} rejected rows removed, continuing with ${components.length} accepted rows.`);
         }
 
         const cleanedHeaders = ['ItemNumber', 'NestID', 'Length_mm', 'BeamType_mm'];
@@ -316,7 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <h3>Results: ${escapeHtml(result.batchName)} <small style="font-weight:400;">(${escapeHtml(result.solver || '')})</small></h3>
             <div class="stats-row">
                 <div class="stat-card">
-                    <p class="stat-value">${result.grandTotalBeams}</p>
+                    <p class="stat-value">${result.grandTotalBeams.toLocaleString()}</p>
                     <p class="stat-label">Beams Used</p>
                 </div>
                 <div class="stat-card">
@@ -336,24 +332,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="stat-label">Waste Percentage</p>
                 </div>
             </div>
-            <div style="margin: 8px 0 14px; display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="secondary-btn" id="btn-secure-export">Secure Export Package</button>
-            </div>
+
         `);
 
-        // visual cutting layout - the coloured bars showing whats on each beam
-        resultsSection.insertAdjacentHTML('beforeend', buildBeamLayout(result));
-        wireBeamLayoutControls(result);
-
-        // scrollable CSV table
-        if (result.csvContent) {
-            resultsSection.insertAdjacentHTML('beforeend', buildCsvViewer(result.csvContent, result.batchName));
-        }
-
-        // charts - bar chart for waste comparison and pie for utilisation
-        const chartData = parseChartData(result);
         const safeBatch = result.batchName.replace(/[^a-zA-Z0-9_-]/g, '_');
-        resultsSection.insertAdjacentHTML('beforeend', `
+
+        try {
+            // visual cutting layout - the coloured bars showing whats on each beam
+            resultsSection.insertAdjacentHTML('beforeend', buildBeamLayout(result));
+            wireBeamLayoutControls(result);
+
+            // scrollable CSV table
+            if (result.csvContent) {
+                resultsSection.insertAdjacentHTML('beforeend', window.batchDetailHelpers.buildCsvViewer(result.csvContent, result.batchName));
+            }
+
+            // charts - bar chart for waste comparison and pie for utilisation
+            const chartData = parseChartData(result);
+            resultsSection.insertAdjacentHTML('beforeend', `
             <div class="card">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <h3 style="margin:0;">Waste Comparison</h3>
@@ -376,6 +372,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         buildSingleChart(chartData, 'chart-bar', 'overview-bar');
         buildSingleChart(chartData, 'chart-pie', 'overview-pie');
+    } catch (err) {
+        console.error('Error rendering additional result sections:', err);
+        const errorBanner = document.createElement('div');
+        errorBanner.className = 'message';
+        errorBanner.textContent = 'Partial results shown: chart/table rendering failed. See console for details.';
+        resultsSection.appendChild(errorBanner);
+        return;
+    }
 
         // chart download buttons - saves as PNG through native dialog
         document.getElementById('btn-dl-chart-bar').addEventListener('click', () => downloadChartAsPng('chart-bar', `${safeBatch}_waste_comparison.png`));
@@ -385,53 +389,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const dlBtn = document.getElementById('btn-download-csv');
         if (dlBtn) dlBtn.addEventListener('click', () => downloadCsv(result.csvContent, result.batchName));
 
-        const exportBtn = document.getElementById('btn-secure-export');
-        if (exportBtn) {
-            exportBtn.addEventListener('click', async () => {
-                if (!window.exportAPI || !window.exportAPI.securePackage) {
-                    alert('Secure export API is not available.');
-                    return;
-                }
-
-                const pw1 = window.prompt('Enter export password (min 8 chars):');
-                if (!pw1) return;
-                const pw2 = window.prompt('Confirm export password:');
-                if (pw1 !== pw2) {
-                    alert('Passwords do not match.');
-                    return;
-                }
-
-                if (pw1.length < 8) {
-                    alert('Password must be at least 8 characters.');
-                    return;
-                }
-
-                const chartCanvas = document.getElementById('chart-bar');
-                const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
-
-                const response = await window.exportAPI.securePackage({
-                    batchName: result.batchName,
-                    password: pw1,
-                    cleanedCsv: lastCleanedCsv,
-                    validationReport: lastValidationReport,
-                    optimisationSummary: {
-                        solver: result.solver,
-                        priority: result.priority,
-                        grandWastePct: result.grandWastePct,
-                        grandTotalWasteMm: result.grandTotalWasteMm,
-                        grandTotalBeams: result.grandTotalBeams
-                    },
-                    chartImageBase64
-                });
-
-                if (!response.success) {
-                    alert(response.message || 'Secure export failed.');
-                    return;
-                }
-
-                alert(`Secure export created: ${response.filename}\nIntegrity SHA-256: ${response.integritySha256}`);
-            });
-        }
     }
 
     // ============================================================
@@ -458,7 +415,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="secondary-btn" id="btn-download-layout">Download Layout as PDF</button>
                 </div>
                 <div class="beam-layout" id="beam-layout-container">
-                    ${renderBeams(allBeams, nestIds, 'all', allBeams.length)}
+                    ${renderBeams(allBeams, nestIds, 'all', allBeams.length, result.kerfMm)}
                 </div>
             </div>
         `;
@@ -467,17 +424,25 @@ document.addEventListener('DOMContentLoaded', () => {
     // renders each beam as a row of coloured segments
     // uses a 10-colour palette that cycles for beams with loads of components
     // waste shows up as a stripy segment at the end
-    function renderBeams(allBeams, nestIds, filterNest, limit) {
+    function renderBeams(allBeams, nestIds, filterNest, limit, kerfMm = 3) {
         let html = '';
         let count = 0;
         const maxStock = Math.max(...allBeams.map(b => b.stockLengthMm));
+
+        kerfMm = typeof kerfMm === 'number' && !Number.isNaN(kerfMm) ? kerfMm : 3;
 
         for (let i = 0; i < allBeams.length && count < limit; i++) {
             if (filterNest !== 'all' && String(nestIds[i]) !== filterNest) continue;
             const beam = allBeams[i];
             count++;
 
+            // Show component segments only, with a single end-waste block for all losses (kerf + leftover)
             let segments = '';
+            const totalComponentMm = beam.components.reduce((acc, c) => acc + c.lengthMm, 0);
+            const beamKerfMm = Number(beam.kerfMm || 0);
+            const remnantMm = Math.max(0, beam.stockLengthMm - totalComponentMm - beamKerfMm);
+            const totalWasteMm = beamKerfMm + remnantMm;
+
             beam.components.forEach((comp, ci) => {
                 const widthPct = (comp.lengthMm / beam.stockLengthMm) * 100;
                 const colClass = `seg-c${ci % 10}`;
@@ -485,10 +450,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 segments += `<div class="beam-segment ${colClass}" style="width:${widthPct}%" title="${escapeHtml(comp.itemNumber)}: ${comp.lengthMm}mm">${label}</div>`;
             });
 
-            // waste segment with diagonal stripes
-            if (beam.wasteMm > 0) {
-                const wastePct = (beam.wasteMm / beam.stockLengthMm) * 100;
-                segments += `<div class="beam-segment beam-segment-waste" style="width:${wastePct}%" title="Waste: ${beam.wasteMm}mm">${wastePct > 5 ? 'waste' : ''}</div>`;
+            if (totalWasteMm > 0) {
+                const wastePct = (totalWasteMm / beam.stockLengthMm) * 100;
+                segments += `<div class="beam-segment beam-segment-waste" style="width:${wastePct}%" title="Waste (remnant): ${remnantMm}mm; Kerf: ${beamKerfMm}mm; Total: ${totalWasteMm}mm">${wastePct > 5 ? 'waste' : ''}</div>`;
             }
 
             // scale bar width so the longest beam fills the whole row
@@ -512,36 +476,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function wireBeamLayoutControls(result) {
         const dlLayoutBtn = document.getElementById('btn-download-layout');
         if (dlLayoutBtn) {
-            dlLayoutBtn.addEventListener('click', () => downloadLayoutAsPdf(result.batchName));
+            dlLayoutBtn.addEventListener('click', () => window.batchDetailHelpers.downloadLayoutAsPdf(result.batchName));
         }
-    }
-
-    // opens all the beams in a new print-friendly window for PDF export
-    function downloadLayoutAsPdf(batchName) {
-        const container = document.getElementById('beam-layout-container');
-        if (!container) return;
-        const html = container.innerHTML;
-        const pw = window.open('', '_blank');
-        if (!pw) { alert('Pop-up blocked.'); return; }
-        pw.document.write(`<!DOCTYPE html><html><head><title>Cutting Layout - ${escapeHtml(batchName)}</title>
-<style>
-body{margin:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;background:#fff;color:#111}
-.beam-row{display:flex;align-items:center;margin-bottom:6px;gap:8px}
-.beam-label{flex-shrink:0;width:50px;font-size:11px;color:#666;text-align:right}
-.beam-bar{flex:1;height:28px;display:flex;border-radius:3px;overflow:hidden;border:1px solid #d0d0d0;background:#f0f0f0}
-.beam-segment{height:100%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap;padding:0 2px;border-right:1px solid rgba(0,0,0,0.15)}
-.beam-segment:last-child{border-right:none}
-.beam-segment-waste{background:repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 3px,#d1d5db 3px,#d1d5db 6px);color:#666;font-style:italic}
-.beam-length-label{flex-shrink:0;width:65px;font-size:11px;color:#666}
-.seg-c0{background:#3b82f6}.seg-c1{background:#10b981}.seg-c2{background:#f59e0b}.seg-c3{background:#ef4444}.seg-c4{background:#8b5cf6}
-.seg-c5{background:#ec4899}.seg-c6{background:#06b6d4}.seg-c7{background:#84cc16}.seg-c8{background:#f97316}.seg-c9{background:#6366f1}
-@media print{button{display:none}}
-</style></head><body>
-<h2>Cutting Layout - ${escapeHtml(batchName)}</h2>
-${html}
-<br><button onclick="window.print()">Print / Save as PDF</button>
-</body></html>`);
-        pw.document.close();
     }
 
     // ============================================================
@@ -641,8 +577,8 @@ ${html}
                 datasets.push({
                     label: 'Previous Waste',
                     data: [chartData.oldWasteMm],
-                    backgroundColor: 'rgba(220, 38, 38, 0.6)',
-                    borderColor: 'rgba(220, 38, 38, 1)',
+                    backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                    borderColor: 'rgba(245, 158, 11, 1)',
                     borderWidth: 1, barPercentage: 0.5
                 });
             }
@@ -651,7 +587,11 @@ ${html}
                 data: { labels, datasets },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'top' }, title: { display: true, text: 'Waste Comparison' } },
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Waste Comparison' },
+                        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatMm(ctx.raw)}` } }
+                    },
                     scales: { y: { beginAtZero: true, title: { display: true, text: 'mm' } } }
                 }
             };
@@ -691,31 +631,12 @@ ${html}
   
     // Helper functions
 
-    // makes mm values look nicer (converts to m or km if big enough)
+    // format mm values consistently as millimetres to avoid mixed units in UI
     function formatMm(mm) {
-        if (mm >= 1000000) return (mm / 1000000).toFixed(2) + ' km';
-        if (mm >= 1000) return (mm / 1000).toFixed(1) + ' m';
-        return mm.toFixed(0) + ' mm';
+        return `${Number(mm).toFixed(0)} mm`;
     }
 
     // builds a scrollable HTML table from CSV content
-    function buildCsvViewer(csvContent, batchName) {
-        const lines = csvContent.split('\n').filter(l => l.trim());
-        if (lines.length === 0) return '';
-        const headers = parseCsvLine(lines[0]);
-        let tableHtml = '<thead><tr>';
-        for (const h of headers) tableHtml += `<th>${escapeHtml(h)}</th>`;
-        tableHtml += '</tr></thead><tbody>';
-        for (let i = 1; i < lines.length; i++) {
-            const cells = parseCsvLine(lines[i]);
-            tableHtml += '<tr>';
-            for (const c of cells) tableHtml += `<td>${escapeHtml(c)}</td>`;
-            tableHtml += '</tr>';
-        }
-        tableHtml += '</tbody>';
-        return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><h3 style="margin:0;">Output CSV</h3><button class="secondary-btn" id="btn-download-csv">Download CSV</button></div><div class="csv-viewer"><table>${tableHtml}</table></div></div>`;
-    }
-
     // save chart as PNG through the native save dialog
     async function downloadChartAsPng(canvasId, defaultName) {
         const canvas = document.getElementById(canvasId);
