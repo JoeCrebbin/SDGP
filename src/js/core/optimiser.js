@@ -1,23 +1,22 @@
-/*
- * optimiser.js - Cutting Stock Optimisation Algorithms
- *
- * This is the core algorithm file that solves the 1D cutting stock problem.
- * Given a list of component lengths that need to be cut, and available beam
- * stock lengths, it figures out the best way to arrange cuts on beams to
- * minimise waste (or minimise the number of beams used).
- *
- * Two strategies are implemented:
- *   - Best-Fit Decreasing (BFD): for each component, searches ALL existing beams
- *     and picks the one with the LEAST remaining space (tightest fit).
- *     This careful placement minimises leftover waste.
- *   - First-Fit Decreasing (FFD): for each component, takes the FIRST beam that
- *     fits without searching further. Faster to compute, slightly more waste.
- *
- * Both algorithms:
- *   - Sort components largest-first (decreasing order) before packing
- *   - Use the largest available stock length when opening new beams
- *   - Account for kerf (saw blade width) on each cut
- */
+/**
+  * optimiser.js - Core Cutting Stock Algorithm
+  * SDGP Module 2025/26
+  * This is where the magic happens basically. We take a list of components
+  * that need cutting and figure out how to fit them onto beams with
+  * minimal waste. Its a 1D bin packing problem which we learned about
+  * in the algorithms module.
+  *
+  * We implemented the strategy:
+  * BFD (Best-Fit Decreasing): checks every beam to find the tightest fit.
+  * It sorts components biggest-first before packing because that
+  * gives better results.
+  *
+  * Important: kerf (the width the saw blade eats up) is NOT added to the
+  * first component on each beam because theres no cut needed to place it.
+  * We spent ages debugging this lol.
+*/
+
+// Picks the smallest beam that fits - used by BFD to keep waste down
 
 /**
  * Pick the SMALLEST stock length that can fit the required length.
@@ -56,21 +55,11 @@ function pickLargestStockLength(stockLengths, requiredMm) {
   );
 }
 
-/**
- * Best-Fit Decreasing (BFD) - Minimises waste.
- *
- * For each component (sorted largest first):
- *   1. Look through ALL existing beams
- *   2. Find the one with the LEAST remaining space that still fits the component
- *   3. If no beam fits, open a new beam using the largest available stock length
- *
- * The key difference from FFD is the placement strategy: BFD searches every beam
- * to find the tightest fit, which packs beams more efficiently and reduces waste.
- *
- * @param {Object[]} components - Array of {itemNumber, lengthMm, nestId, ...}
- * @param {number[]} stockLengths - Available beam lengths in mm
- * @param {number} kerfMm - Saw blade width in mm (added to each cut)
- * @returns {Object[]} Array of beam objects with components and waste info
+/*
+ * Best-Fit Decreasing
+ * For each component we look through ALL the beams and find the one
+ * with the least space left that still fits. Packs everything really
+ * tightly which is what the shipyard wants.
  */
 function packBestFitDecreasing(components, stockLengths, kerfMm) {
   // Sort components longest-first for better packing
@@ -84,7 +73,7 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
     let bestIdx = -1;
     let bestRemaining = null;
 
-    // Search ALL existing beams for the tightest fit
+    // Try every existing beam to find the tightest fit
     for (let i = 0; i < beams.length; i++) {
       const beam = beams[i];
       const additional = comp.lengthMm + kerfMm; // Component length + saw blade width
@@ -98,8 +87,7 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
       }
     }
 
-    // No existing beam fits - open a new one with the largest available stock
-    // (both BFD and FFD use large beams; the difference is in placement strategy)
+    // Nothing fits - grab a new beam (no kerf on first piece)
     if (bestIdx === -1) {
       const required = comp.lengthMm + kerfMm;
       const L = pickLargestStockLength(stockLengths, required);
@@ -107,7 +95,7 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
       bestIdx = beams.length - 1;
     }
 
-    // Place the component on the chosen beam
+    // Place it
     const beam = beams[bestIdx];
     beam.components.push(comp);
     beam.usedMm += comp.lengthMm + kerfMm;
@@ -178,20 +166,11 @@ function packFirstFitDecreasing(components, stockLengths, kerfMm) {
   return beams;
 }
 
-/**
- * Main entry point - runs the full optimisation across all nest groups.
- *
- * Components are grouped by their nestId (material type), and each group
- * is optimised independently. This is because you can't mix different
- * material types on the same beam.
- *
- * @param {Object} params
- * @param {string} params.batchName - User-given name for this optimisation run
- * @param {Object[]} params.components - All components from the CSV
- * @param {number} params.kerfMm - Saw blade width
- * @param {number} params.minRemnantMm - Minimum usable remnant (not currently used in algo)
- * @param {string} params.priority - 'waste' for BFD or 'speed' for FFD
- * @returns {Object} Full results including per-nest breakdowns and grand totals
+/*
+ * Main entry point - runs the whole optimisation.
+ * Groups components by nest/material type first since you obviously
+ * cant mix different materials on the same beam. Then runs BFD on
+ * each group separately and totals everything up.
  */
 function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority }) {
   const priorityMode = priority === 'speed' ? 'speed' : 'waste';
@@ -200,7 +179,7 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     ? 'First-Fit Decreasing (Fastest)'
     : 'Best-Fit Decreasing (Min Waste)';
 
-  // Group components by nestId (material type)
+  // Group by material type
   const groups = {};
   for (const comp of components) {
     const key = String(comp.nestId);
@@ -208,11 +187,10 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     groups[key].push(comp);
   }
 
-  // Collect available stock lengths from the data.
-  // The CSV's "TotalLength" column often contains the actual used length on
-  // each beam (e.g. 5916, 7872), not the standard stock sizes. We snap each
-  // value to the nearest standard size to avoid having thousands of "custom"
-  // beam lengths that give unrealistically low waste.
+  // Figure out what stock sizes are available from the CSV data.
+  // The CSV gives us actual used lengths like 5916mm which arent real stock sizes,
+  // so we snap them to the nearest standard size (6m, 8m, 13m) to get realistic results
+
   const STANDARD_SIZES = [6000, 8000, 13000];
   const stockLengthsSet = new Set();
   for (const comp of components) {
@@ -227,7 +205,7 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
     ? [...stockLengthsSet].sort((a, b) => a - b)
     : STANDARD_SIZES;
 
-  // Run the packing algorithm for each nest group and accumulate totals
+  // Run the algorithm on each group and add up the totals
   const batchResults = [];
   let grandTotalStock = 0;
   let grandTotalCut = 0;
