@@ -6,7 +6,10 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "node --check main.js && node --check src/js/preload.js && node --check src/js/renderer.js && node --check src/js/sidenav.js && node --check src/js/upload_handler.js",
+    "test": "node --test",
+    "ci": "npm run lint && npm run test",
+    "build": "electron-builder --win --publish never"
   },
   "repository": {
     "type": "git",
@@ -20,10 +23,27 @@
   "homepage": "https://github.com/JoeCrebbin/SDGP#readme",
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
-    "electron": "^40.0.0"
+    "electron": "^40.0.0",
+    "electron-builder": "^26.8.1"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2"
+  },
+  "build": {
+    "appId": "com.sdgp.app",
+    "productName": "SDGP",
+    "files": [
+      "main.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false
+    }
   }
 }

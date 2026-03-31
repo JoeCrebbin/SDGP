@@ -5,3 +5,7 @@ contextBridge.exposeInMainWorld('authAPI', {
   login: (email, password) => ipcRenderer.invoke('auth:login', { email, password }),
   register: (email, password) => ipcRenderer.invoke('auth:register', { email, password })
 });
+
+contextBridge.exposeInMainWorld('optimisationAPI', {
+  run: (payload) => ipcRenderer.invoke('optimisation:run', payload)
+});
