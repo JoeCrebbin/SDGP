@@ -1,19 +1,16 @@
 /*
- * optimiser_worker.js - Worker Thread Entry Point
+ * optimiser_worker.js - Worker Thread for Running the Algorithm
+ * SDGP 2025/26
  *
- * This file runs inside a separate thread (not the main Electron thread).
- * It receives the optimisation parameters via workerData, runs the algorithm,
- * and sends the result back to the main thread via postMessage.
- *
- * This prevents the UI from freezing during long-running optimisations.
- * See: https://nodejs.org/api/worker_threads.html
+ * This runs in its own thread so the UI doesnt freeze while the
+ * optimiser is crunching through hundreds of components.
+ * Gets the params from main.js via workerData, runs the algo,
+ * and sends the result back.
  */
 
 const { parentPort, workerData } = require('worker_threads');
 const { runOptimisation } = require('./optimiser.js');
 
-// Run the algorithm with the data passed from main.js
+// run it and send the result back to main thread
 const result = runOptimisation(workerData);
-
-// Send the result back to the main thread
 parentPort.postMessage(result);

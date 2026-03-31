@@ -1,65 +1,57 @@
 /*
- * auth.js - Login and Registration Page Handler
+ * auth.js - Login & Registration
+ * SDGP 2025/26
  *
- * Handles client-side validation and form submission for both the
- * login page (index.html) and the registration page (register.html).
- *
- * Both pages share this file. The script detects which page it's on
- * by checking which form elements exist (e.g. confirm-password only
- * exists on the register page).
+ * Handles the login and register forms. Both pages share this file -
+ * it checks which elements exist to figure out which page its on.
+ * We added client-side validation so users get instant feedback
+ * before anything hits the backend.
  */
 
-// ---- Client-side Validation ----
-
-// Basic email format check using regex
+// basic email format check
 const validateEmail = (email) => {
   regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return regex.test(String(email).trim().toLowerCase());
 };
 
-// Password strength validation
-// Must have: 8+ chars, uppercase, lowercase, number, special character
+// password needs to be decent - 8+ chars, upper, lower, number, special char
 const validatePassword = (password) => {
   const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
   return regex.test(String(password));
 };
 
-// ---- Enter Key Submission ----
-// Allows users to press Enter in password fields to submit the form
-// (instead of having to click the button)
+// let users press Enter to submit instead of having to click the button
 document.addEventListener('DOMContentLoaded', () => {
     const passwordField = document.getElementById('password');
     const confirmField = document.getElementById('confirm-password');
 
     if (passwordField && !confirmField) {
-        // Login page: Enter on password field submits login
+        // login page - Enter submits login
         passwordField.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); handleLogin(); }
         });
     }
     if (confirmField) {
-        // Register page: Enter on confirm-password field submits registration
+        // register page - Enter on confirm field submits registration
         confirmField.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); handleRegister(); }
         });
     }
 });
 
-// ---- Login Handler ----
-
+// handle login form submission
 async function handleLogin() {
   const email = document.getElementById('email').value.trim().toLowerCase();
   const pass = document.getElementById('password').value;
   const msg = document.getElementById('message');
 
-  // Quick check before making an IPC call
   if (!email || !pass) {
     msg.style.color = 'red';
     msg.textContent = 'Please enter email and password';
     return;
   }
 
-  // Call the login IPC handler in main.js via the preload bridge
+  // call the login handler in main.js via the preload bridge
   try {
     const response = await window.authAPI.login(email, pass);
 
@@ -80,15 +72,14 @@ async function handleLogin() {
   }
 }
 
-// ---- Registration Handler ----
-
+// handle registration form
 async function handleRegister() {
   const email = document.getElementById('email').value.trim().toLowerCase();
   const password = document.getElementById('password').value;
   const confirmPassword = document.getElementById('confirm-password').value;
   const msg = document.getElementById('message');
 
-  // Step-by-step validation with user-friendly messages
+  // validate everything step by step so users know exactly whats wrong
 
   if (!email) {
     msg.style.color = 'red';
@@ -120,13 +111,13 @@ async function handleRegister() {
     return;
   }
 
-  // All validation passed - call the register IPC handler
+  // all good - send it to the backend
   try {
     const response = await window.authAPI.register(email, password);
 
     if (response.success) {
       msg.style.color = 'green';
-      // New users need admin approval before they can log in
+      // new users need admin approval before they can log in
       msg.textContent = 'Registration successful! Please wait for an administrator to approve your account';
     }
     else {
