@@ -34,14 +34,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-<<<<<<< HEAD
             trendPoints = [...response.batches]
                 .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
                 .map((b) => ({ id: b.id, batch_name: b.batch_name, created_at: b.created_at, waste: b.total_wastage_percent }));
 
             // Build table rows for each batch
-=======
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
             historyBody.innerHTML = '';
             for (const batch of response.batches) {
                 const row = document.createElement('tr');
@@ -101,10 +98,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            // reconstruct the beam data from the saved CSV
             const parsed = parseSavedCsv(csvContent);
+            const chartData = parseChartData(csvContent, parsed);
+            const safeBatch = batchName.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-            // stat cards
             detailSection.insertAdjacentHTML('beforeend', `
                 <hr>
                 <h3>${escapeHtml(batchName)}</h3>
@@ -132,94 +129,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `);
 
-<<<<<<< HEAD
-            if (csvContent && csvContent.trim()) {
-                // Render the CSV data table with download button
-                detailSection.insertAdjacentHTML('beforeend', buildCsvViewer(csvContent, batch.batch_name || 'batch'));
-                const dlBtn = detailSection.querySelector('#btn-download-csv');
-                if (dlBtn) {
-                    dlBtn.addEventListener('click', () => downloadCsv(csvContent, batch.batch_name || 'batch'));
-                }
+            detailSection.insertAdjacentHTML('beforeend', buildBeamLayout(parsed.beams, batchName));
+            wireLayoutDownload(batchName);
 
-                // Render waste comparison charts
-                const chartData = parseChartData(csvContent, batch.total_wastage_percent);
-                detailSection.insertAdjacentHTML('beforeend', `
-                    <div class="card">
-                        <h3 style="margin-top:0;">Waste Comparison</h3>
-                        <div class="chart-controls">
-                            <label for="chart-type" style="font-size:13px; font-weight:500;">Chart type:</label>
-                            <select id="chart-type" style="width:auto;" aria-label="History chart type">
-                                <option value="overview-bar">Overall Comparison</option>
-                                <option value="overview-pie">Material Utilisation (Pie)</option>
-                                <option value="overview-doughnut">Material Utilisation (Doughnut)</option>
-                                <option value="nest-bar">Per-Nest Waste (Top 15)</option>
-                                <option value="trend-line">Run History Trend</option>
-                            </select>
-                            <button class="secondary-btn" id="btn-download-chart-pdf" aria-label="Download history chart as PDF">Download Chart as PDF</button>
-                            <button class="secondary-btn" id="btn-secure-export-history" aria-label="Create secure encrypted export package">Secure Export Package</button>
-                        </div>
-                        <div class="chart-container" style="height:360px;">
-                            <canvas id="history-chart"></canvas>
-                        </div>
-                    </div>
-                `);
-
-                buildChart(chartData, 'history-chart');
-                document.getElementById('chart-type').addEventListener('change', () => buildChart(chartData, 'history-chart'));
-                document.getElementById('btn-download-chart-pdf').addEventListener('click', () => downloadChartAsPdf('history-chart'));
-
-                const secureBtn = document.getElementById('btn-secure-export-history');
-                if (secureBtn) {
-                    secureBtn.addEventListener('click', async () => {
-                        if (!window.exportAPI || !window.exportAPI.securePackage) {
-                            alert('Secure export API is not available.');
-                            return;
-                        }
-                        const pw1 = window.prompt('Enter export password (min 8 chars):');
-                        if (!pw1) return;
-                        const pw2 = window.prompt('Confirm export password:');
-                        if (pw1 !== pw2) return alert('Passwords do not match.');
-                        if (pw1.length < 8) return alert('Password must be at least 8 characters.');
-
-                        const chartCanvas = document.getElementById('history-chart');
-                        const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
-
-                        const exportRes = await window.exportAPI.securePackage({
-                            batchName: batch.batch_name || 'batch',
-                            password: pw1,
-                            cleanedCsv: csvContent,
-                            validationReport: null,
-                            optimisationSummary: {
-                                wastePct: batch.total_wastage_percent,
-                                createdAt: batch.created_at
-                            },
-                            chartImageBase64
-                        });
-
-                        if (!exportRes.success) return alert(exportRes.message || 'Secure export failed.');
-                        alert(`Secure export created: ${exportRes.filename}`);
-                    });
-                }
-            } else {
-                detailSection.insertAdjacentHTML('beforeend', '<div class="card"><p>No CSV data available for this batch.</p></div>');
-=======
-            // cutting layout
-            if (parsed.beams.length > 0) {
-                detailSection.insertAdjacentHTML('beforeend', buildBeamLayout(parsed.beams, batchName));
-                wireLayoutDownload(batchName);
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
-            }
-
-            // CSV table with download
             detailSection.insertAdjacentHTML('beforeend', buildCsvViewer(csvContent, batchName));
             const dlCsvBtn = detailSection.querySelector('#btn-download-csv');
             if (dlCsvBtn) {
                 dlCsvBtn.addEventListener('click', () => downloadCsv(csvContent, batchName));
             }
 
-            // charts with download buttons
-            const chartData = parseChartData(csvContent, parsed);
-            const safeBatch = batchName.replace(/[^a-zA-Z0-9_-]/g, '_');
             detailSection.insertAdjacentHTML('beforeend', `
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -233,7 +151,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <h3 style="margin:0;">Material Utilisation</h3>
-                        <button class="secondary-btn" id="btn-dl-chart-pie">Download Chart</button>
+                        <div style="display:flex; gap:8px;">
+                            <button class="secondary-btn" id="btn-dl-chart-pie">Download Chart</button>
+                            <button class="secondary-btn" id="btn-secure-export-history">Secure Export Package</button>
+                        </div>
                     </div>
                     <div class="chart-container" style="height:360px;">
                         <canvas id="chart-pie"></canvas>
@@ -247,39 +168,56 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('btn-dl-chart-bar').addEventListener('click', () => downloadChartAsPng('chart-bar', `${safeBatch}_waste_comparison.png`));
             document.getElementById('btn-dl-chart-pie').addEventListener('click', () => downloadChartAsPng('chart-pie', `${safeBatch}_utilisation_pie.png`));
 
-            addCloseButton();
+            const secureBtn = document.getElementById('btn-secure-export-history');
+            if (secureBtn) {
+                secureBtn.addEventListener('click', async () => {
+                    if (!window.exportAPI || !window.exportAPI.securePackage) {
+                        alert('Secure export API is not available.');
+                        return;
+                    }
 
+                    const pw1 = window.prompt('Enter export password (min 8 chars):');
+                    if (!pw1) return;
+                    const pw2 = window.prompt('Confirm export password:');
+                    if (pw1 !== pw2) return alert('Passwords do not match.');
+                    if (pw1.length < 8) return alert('Password must be at least 8 characters.');
+
+                    const chartCanvas = document.getElementById('chart-bar');
+                    const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
+
+                    const exportRes = await window.exportAPI.securePackage({
+                        batchName,
+                        password: pw1,
+                        cleanedCsv: csvContent,
+                        validationReport: null,
+                        optimisationSummary: {
+                            wastePct: batch.total_wastage_percent,
+                            createdAt: batch.created_at
+                        },
+                        chartImageBase64
+                    });
+
+                    if (!exportRes.success) {
+                        alert(exportRes.message || 'Secure export failed.');
+                        return;
+                    }
+                    alert(`Secure export created: ${exportRes.filename}`);
+                });
+            }
+
+            addCloseButton();
         } catch (err) {
             console.error('Detail load error:', err);
             alert('Error loading batch details.');
         }
     }
 
-<<<<<<< HEAD
-    /**
-     * Parse CSV content into chart-friendly data.
-     * Similar to dashboard.js parseChartData but works from saved CSV
-     * rather than live optimisation results.
-     */
-    function parseChartData(csvContent, totalWastePct) {
-        const data = {
-            optimisedWastePct: totalWastePct || 0,
-            optimisedUsedPct: 100 - (totalWastePct || 0),
-            totalStockMm: 0,
-            totalWasteMm: 0,
-            totalCutMm: 0,
-            oldWastePct: null,
-            nests: [],
-            trend: trendPoints
-        };
-=======
     function addCloseButton() {
         detailSection.insertAdjacentHTML('beforeend', '<button class="secondary-btn" id="detail-close" style="margin-top:8px;">Close Details</button>');
         document.getElementById('detail-close').addEventListener('click', () => {
             detailSection.style.display = 'none';
         });
     }
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 
     // ============================================================
   
@@ -551,7 +489,6 @@ ${html}
                 },
                 plugins: [pieDataLabelsPlugin]
             };
-<<<<<<< HEAD
         } else if (chartType === 'nest-bar') {
             const top = chartData.nests.slice(0, 15);
             config = {
@@ -608,8 +545,6 @@ ${html}
                     }
                 }
             };
-=======
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
         }
 
         if (config) new Chart(canvas.getContext('2d'), config);

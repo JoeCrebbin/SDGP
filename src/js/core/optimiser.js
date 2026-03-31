@@ -28,6 +28,17 @@ function pickStockLength(stockLengths, requiredMm) {
   );
 }
 
+// Picks the largest available beam that can still satisfy the requirement.
+function pickLargestStockLength(stockLengths, requiredMm) {
+  const sorted = [...stockLengths].sort((a, b) => b - a);
+  for (const L of sorted) {
+    if (L >= requiredMm) return L;
+  }
+  throw new Error(
+    `Required ${requiredMm}mm exceeds max stock length ${Math.max(...stockLengths)}mm`
+  );
+}
+
 /*
  * Best-Fit Decreasing
  * For each component we look through ALL the beams and find the one
@@ -35,16 +46,11 @@ function pickStockLength(stockLengths, requiredMm) {
  * tightly which is what the shipyard wants.
  */
 function packBestFitDecreasing(components, stockLengths, kerfMm) {
-<<<<<<< HEAD
   // Sort components longest-first for better packing
   const sorted = [...components].sort((a, b) => {
     if (b.lengthMm !== a.lengthMm) return b.lengthMm - a.lengthMm;
     return String(a.itemNumber).localeCompare(String(b.itemNumber));
   });
-=======
-  // Sort biggest first - packing large items first gives better results
-  const sorted = [...components].sort((a, b) => b.lengthMm - a.lengthMm);
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
   const beams = [];
 
   for (const comp of sorted) {
@@ -90,7 +96,6 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
   return beams;
 }
 
-<<<<<<< HEAD
 /**
  * First-Fit Decreasing (FFD) - Minimises cutting time.
  *
@@ -169,17 +174,6 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority
   const solverName = priorityMode === 'speed'
     ? 'First-Fit Decreasing (Fastest)'
     : 'Best-Fit Decreasing (Min Waste)';
-=======
-/*
- * Main entry point - runs the whole optimisation.
- * Groups components by nest/material type first since you obviously
- * cant mix different materials on the same beam. Then runs BFD on
- * each group separately and totals everything up.
- */
-function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
-  const packFn = packBestFitDecreasing;
-  const solverName = 'Best-Fit Decreasing (Min Waste)';
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 
   // Group by material type
   const groups = {};

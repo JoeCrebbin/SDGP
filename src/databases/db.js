@@ -108,7 +108,6 @@ try {
     db.exec('ALTER TABLE batches ADD COLUMN output_csv_path TEXT');
 }
 
-<<<<<<< HEAD
 try {
     db.prepare('SELECT solver_name FROM batches LIMIT 1').get();
 } catch (e) {
@@ -166,10 +165,6 @@ try {
 // ---- Seed Data ----
 // Insert default accounts if they don't already exist (INSERT OR IGNORE).
 // Both use the bcrypt hash of "password" for initial setup.
-=======
-// seed default accounts if they dont exist already
-// both use the bcrypt hash of "password" - change these in production obviously
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 const adminPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 

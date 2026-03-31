@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsSection = document.getElementById('results-section');
     const validationReportEl = document.getElementById('validation-report');
 
-<<<<<<< HEAD
     let csvContent = null; // Stores the raw CSV text after file is read
     let lastValidationReport = null;
     let lastCleanedCsv = '';
@@ -72,9 +71,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const more = report.rejections.length > 12 ? `<li>...and ${report.rejections.length - 12} more</li>` : '';
         return `${head}<ul style="margin:6px 0 0 16px;">${rows}${more}</ul>`;
     }
-=======
-    let csvContent = null; // raw CSV text after file is read
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 
     // prefill kerf and min remnant from global settings if they exist
     (async () => {
@@ -105,7 +101,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (e) => {
             csvContent = e.target.result;
-<<<<<<< HEAD
             if (!csvContent || !csvContent.trim()) {
                 msg.textContent = 'CSV is empty. Please upload a valid file.';
                 msg.style.color = 'var(--danger)';
@@ -124,11 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Populate each mapping dropdown with the CSV column names
-=======
-            const firstline = csvContent.split('\n')[0];
-            const columns = firstline.split(',').map(col => col.trim());
-            // fill each dropdown with the column names from the CSV
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
             mappingSelects.forEach(select => {
                 select.innerHTML = '<option value="">-- Select Column --</option>';
                 columns.forEach((col, index) => {
@@ -216,9 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemNumber = cols[parseInt(mapId)] || '';
             const rawLength = parseFloat(cols[parseInt(mapLength)]);
             const rawBeamType = parseFloat(cols[parseInt(mapTotalLength)]);
-<<<<<<< HEAD
-            // If material group is mapped, use it to group components; otherwise all go in one group
-            const nestId = mapMaterial ? (cols[parseInt(mapMaterial)] || 'default') : 'all';
+            const nestId = 'all';
 
             if (!itemNumber) {
                 rejections.push({ row: i + 1, reason: 'Missing required Component ID' });
@@ -250,13 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
             seenKeys.add(duplicateKey);
 
             components.push({ itemNumber, lengthMm, beamType: beamTypeMm, nestId });
-            // If an old waste column is mapped, store it for comparison charts
-=======
-            const nestId = 'all';
-            if (!itemNumber || isNaN(rawLength) || rawLength <= 0) continue;
-            components.push({ itemNumber, lengthMm: rawLength * multiplier, beamType: isNaN(rawBeamType) ? 0 : rawBeamType * multiplier, nestId });
             // store old waste values if that column was mapped (for comparison charts)
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
+
             if (mapOldWaste !== '') {
                 const oldVal = parseFloat(cols[parseInt(mapOldWaste)]);
                 if (!isNaN(oldVal)) oldWasteData[itemNumber] = oldVal * multiplier;
@@ -274,7 +257,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (components.length === 0) { msg.textContent = 'No valid components found. Check your column mappings.'; msg.style.color = 'var(--danger)'; return; }
 
-<<<<<<< HEAD
         if (rejections.length > 0) {
             const proceed = window.confirm(`Validation found ${rejections.length} rejected rows. Continue with ${components.length} accepted rows?`);
             if (!proceed) {
@@ -288,17 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const cleanedRows = components.map((c) => `${c.itemNumber},${c.nestId},${c.lengthMm},${c.beamType}`);
         lastCleanedCsv = [cleanedHeaders.join(','), ...cleanedRows].join('\n');
 
-        // Show loading state and disable the button to prevent double-clicks
-=======
         // show loading state and disable button so they dont click twice
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
         msg.textContent = `Running optimisation on ${components.length} components...`;
         msg.style.color = '';
         submitBtn.disabled = true;
 
         try {
-<<<<<<< HEAD
-            // Call the main process to run the algorithm in a worker thread
+            // send it to main.js which runs the algorithm in a worker thread
             const response = await window.optimiseAPI.run({
                 batchName,
                 components,
@@ -308,10 +286,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 oldWasteData,
                 validationReport: lastValidationReport
             });
-=======
-            // send it to main.js which runs the algorithm in a worker thread
-            const response = await window.optimiseAPI.run({ batchName, components, kerfMm, minRemnantMm, oldWasteData });
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
             if (response.success) {
                 displayResults(response.result);
                 msg.textContent = `Optimisation complete! Solver: ${response.result.solver}`;
@@ -381,22 +355,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const safeBatch = result.batchName.replace(/[^a-zA-Z0-9_-]/g, '_');
         resultsSection.insertAdjacentHTML('beforeend', `
             <div class="card">
-<<<<<<< HEAD
-                <h3 style="margin-top:0;">Waste Comparison</h3>
-                <div class="chart-controls">
-                    <label for="chart-type" style="font-size:13px; font-weight:500;">Chart type:</label>
-                    <select id="chart-type" style="width:auto;" aria-label="Waste chart type">
-                        <option value="overview-bar">Overall Comparison (mm)</option>
-                        <option value="overview-pie">Material Utilisation (Pie)</option>
-                        <option value="overview-doughnut">Material Utilisation (Doughnut)</option>
-                        <option value="nest-bar">Per-Nest Waste (Top 15)</option>
-                    </select>
-                    <button class="secondary-btn" id="btn-download-chart-pdf" aria-label="Download waste chart as PDF">Download Chart as PDF</button>
-=======
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                     <h3 style="margin:0;">Waste Comparison</h3>
                     <button class="secondary-btn" id="btn-dl-chart-bar">Download Chart</button>
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
                 </div>
                 <div class="chart-container" style="height:360px;">
                     <canvas id="chart-bar"></canvas>
@@ -445,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                const chartCanvas = document.getElementById('waste-chart');
+                const chartCanvas = document.getElementById('chart-bar');
                 const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
 
                 const response = await window.exportAPI.securePackage({

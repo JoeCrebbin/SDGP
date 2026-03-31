@@ -16,13 +16,9 @@ const db = require('./src/databases/db.js');
 const bcrypt = require('bcryptjs');   // for hashing passwords so we dont store them in plain text
 const path = require('path');
 const fs = require('fs');
-<<<<<<< HEAD
-const { Worker } = require('worker_threads'); // Lets us run heavy tasks off the main thread
 const { buildEncryptedExport } = require('./src/js/core/secure_export.js');
 const { ALGORITHM_VERSION, PERF_TARGETS_MS_P95, bucketByRows } = require('./src/js/core/nfr_contracts.js');
-=======
 const { Worker } = require('worker_threads'); // runs heavy stuff off the main thread so the UI doesnt freeze
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 
 // this will crash if you try to run it with regular node instead of electron
 if (!process.versions || !process.versions.electron) {
@@ -204,15 +200,8 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     if (!components || components.length === 0) return { success: false, message: 'No components provided' };
 
-<<<<<<< HEAD
-    const priorityMode = priority === 'speed' ? 'speed' : 'waste';
-
-    // Run the selected algorithm in a worker thread
-    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: priorityMode });
-=======
     // run BFD in a worker thread so it doesnt block the UI
     const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: 'waste' });
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
 
     // build the output CSV - one row per component showing which beam it got put on
     const csvRows = ['ItemNumber,NestID,Length_mm,AssignedBeam_mm,BeamIndex,WasteOnBeam_mm,OldWaste_mm'];
@@ -272,12 +261,7 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
     );
     const batchId = Number(batchInfo.lastInsertRowid);
     result.batchId = batchId;
-<<<<<<< HEAD
-    result.algorithmVersion = ALGORITHM_VERSION;
-    result.csvContent = csvContent;  // Send the CSV back to the renderer for display
-=======
     result.csvContent = csvContent;
->>>>>>> d5f9ac16cdf2d28d49b94f354c24cb54e7305043
     logActivity(loggedInUserID, 'optimisation', batchName);
 
     if (typeof validationReport?.validationDurationMs === 'number') {
