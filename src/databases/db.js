@@ -183,14 +183,17 @@ db.exec(`
 // Both use the bcrypt hash of "password" for initial setup.
 const adminPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 const userPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
+const managerPasswordHash = '$2a$12$oHYA88q8aRDrAeLkpPNU.uLLNmkssx57OR.XOpvuRpSkSkuUTVE9K';
 
 const insertUser = db.prepare(`
     INSERT OR IGNORE INTO users (email, password_hash, role, is_admin, is_approved)
     VALUES (?, ?, ?, ?, 1)
 `)
 
-// manager account: admin@grantvessels.com / password
-insertUser.run('admin@grantvessels.com', adminPasswordHash, 'manager', 1);
+// default admin account: admin@grantvessels.com / password
+insertUser.run('admin@grantvessels.com', adminPasswordHash, 'admin', 1);
+// manager account: manager@grantvessels.com / password
+insertUser.run('manager@grantvessels.com', managerPasswordHash, 'manager', 1);
 // regular user: user@grantvessels.com / password
 insertUser.run('user@grantvessels.com', userPasswordHash, 'user', 0);
 
@@ -200,8 +203,10 @@ insertSetting.run('default_kerf_mm', '3.0'); // saw blade width
 insertSetting.run('default_min_remnant_mm', '3'); // minimum usable offcut
 insertSetting.run('max_beams_display', '50'); // max beams shown in layout
 
-// ensure the default admin seed is always manager on upgraded databases
-db.prepare("UPDATE users SET role = 'manager', is_admin = 1, is_approved = 1 WHERE email = ?")
+// ensure seeded privileged accounts keep intended roles on upgraded databases
+db.prepare("UPDATE users SET role = 'admin', is_admin = 1, is_approved = 1 WHERE email = ?")
     .run('admin@grantvessels.com');
+db.prepare("UPDATE users SET role = 'manager', is_admin = 1, is_approved = 1 WHERE email = ?")
+    .run('manager@grantvessels.com');
 
 module.exports = db;

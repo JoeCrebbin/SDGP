@@ -61,8 +61,8 @@ contextBridge.exposeInMainWorld('fileAPI', {
 // admin only stuff - user management, logs, settings, viewing all batches
 contextBridge.exposeInMainWorld('adminAPI', {
   listUsers: () => ipcRenderer.invoke('admin:list-users'),
-  approveUser: (userId, role) => ipcRenderer.invoke('admin:approve-user', { userId, role }),
-  updateUserRole: (userId, role) => ipcRenderer.invoke('admin:update-user-role', { userId, role }),
+  approveUser: (userId, role, actingPassword) => ipcRenderer.invoke('admin:approve-user', { userId, role, actingPassword }),
+  updateUserRole: (userId, role, actingPassword) => ipcRenderer.invoke('admin:update-user-role', { userId, role, actingPassword }),
   rejectUser: (userId) => ipcRenderer.invoke('admin:reject-user', { userId }),
   deleteUser: (userId) => ipcRenderer.invoke('admin:delete-user', { userId }),
   listLogs: (search, limit) => ipcRenderer.invoke('admin:list-logs', { search, limit }),

@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const allUsersTitle = document.getElementById('all-users-title');
     const authState = await window.authAPI.checkAuth();
     const canAssignAdmin = authState?.isManager === true;
+    const currentUserId = Number(authState?.userId || 0);
 
     function buildRoleOptions(selectedRole) {
         const current = String(selectedRole || 'user').toLowerCase();
@@ -24,6 +25,64 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${adminOption.replace('>', current === 'admin' ? ' selected>' : '>')}
             ${managerOption.replace('>', current === 'manager' ? ' selected>' : '>')}
         `;
+    }
+
+    function requestPasswordConfirmation(actionLabel) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.background = 'rgba(0,0,0,0.45)';
+            overlay.style.display = 'flex';
+            overlay.style.alignItems = 'center';
+            overlay.style.justifyContent = 'center';
+            overlay.style.zIndex = '9999';
+
+            const modal = document.createElement('div');
+            modal.style.background = 'var(--bg-secondary, #fff)';
+            modal.style.border = '1px solid var(--border, #ddd)';
+            modal.style.borderRadius = '10px';
+            modal.style.padding = '16px';
+            modal.style.width = 'min(92vw, 420px)';
+            modal.style.boxShadow = '0 12px 30px rgba(0,0,0,0.2)';
+
+            modal.innerHTML = `
+                <h3 style="margin:0 0 8px 0;">Verify Password</h3>
+                <p style="margin:0 0 10px 0; color: var(--muted, #666);">Enter your password to ${escapeHtml(actionLabel)}.</p>
+                <input id="role-verify-password" type="password" autocomplete="current-password" placeholder="Password" style="width:100%; padding:8px; margin-bottom:12px;" />
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button type="button" class="secondary-btn" id="role-verify-cancel">Cancel</button>
+                    <button type="button" class="primary-btn" id="role-verify-confirm">Confirm</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            const input = modal.querySelector('#role-verify-password');
+            const cancelBtn = modal.querySelector('#role-verify-cancel');
+            const confirmBtn = modal.querySelector('#role-verify-confirm');
+
+            function cleanup(value) {
+                document.removeEventListener('keydown', onKeyDown);
+                overlay.remove();
+                resolve(value);
+            }
+
+            function onKeyDown(e) {
+                if (e.key === 'Escape') cleanup('');
+                if (e.key === 'Enter') cleanup((input.value || '').trim());
+            }
+
+            document.addEventListener('keydown', onKeyDown);
+            cancelBtn.addEventListener('click', () => cleanup(''));
+            confirmBtn.addEventListener('click', () => cleanup((input.value || '').trim()));
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) cleanup('');
+            });
+
+            input.focus();
+        });
     }
 
     // fetch all users and populate both tables - pending approvals and all users
@@ -75,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             usersBody.innerHTML = '';
             for (const user of all) {
                 const row = document.createElement('tr');
+                const isSelf = currentUserId > 0 && Number(user.id) === currentUserId;
                 const role = String(user.role || (user.is_admin === 1 ? 'admin' : 'user')).toLowerCase();
                 const status = user.is_approved === 1 ? 'Approved' : 'Pending';
                 // cant delete admin accounts from the UI (safety thing)
@@ -83,8 +143,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ? ''
                         : `<button class="danger-btn delete-user-btn" data-id="${user.id}" style="padding:5px 12px;">Delete</button>`);
                 const roleEditor = user.is_approved === 1
-                    ? `<select class="role-select" data-id="${user.id}" style="width:auto; min-width:120px;">${buildRoleOptions(role)}</select>
-                       <button class="secondary-btn update-role-btn" data-id="${user.id}" style="padding:5px 10px; margin-left:6px;">Update</button>`
+                    ? (isSelf
+                        ? '<span style="color:var(--muted);">You cannot change your own role</span>'
+                        : `<select class="role-select" data-id="${user.id}" style="width:auto; min-width:120px;">${buildRoleOptions(role)}</select>
+                       <button class="secondary-btn update-role-btn" data-id="${user.id}" style="padding:5px 10px; margin-left:6px;">Update</button>`)
                     : '<span style="color:var(--muted);">Set on approval</span>';
                 row.innerHTML = `
                     <td>${user.id}</td>
@@ -103,7 +165,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const userId = parseInt(btn.dataset.id);
                     const roleSelect = document.querySelector(`.pending-role-select[data-id="${userId}"]`);
                     const selectedRole = roleSelect ? roleSelect.value : 'user';
-                    const res = await window.adminAPI.approveUser(userId, selectedRole);
+                    const actingPassword = await requestPasswordConfirmation('approve this user and assign role');
+                    if (!actingPassword) {
+                        showMsg('Role approval cancelled: password confirmation required.', false);
+                        return;
+                    }
+                    const res = await window.adminAPI.approveUser(userId, selectedRole, actingPassword);
                     showMsg(res.success ? 'User approved.' : (res.message || 'Failed.'), res.success);
                     if (res.success) loadUsers();
                 });
@@ -137,7 +204,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const userId = parseInt(btn.dataset.id);
                     const roleSelect = document.querySelector(`.role-select[data-id="${userId}"]`);
                     const selectedRole = roleSelect ? roleSelect.value : 'user';
-                    const res = await window.adminAPI.updateUserRole(userId, selectedRole);
+                    const actingPassword = await requestPasswordConfirmation('change this user role');
+                    if (!actingPassword) {
+                        showMsg('Role change cancelled: password confirmation required.', false);
+                        return;
+                    }
+                    const res = await window.adminAPI.updateUserRole(userId, selectedRole, actingPassword);
                     showMsg(res.success ? 'Role updated.' : (res.message || 'Failed to update role.'), res.success);
                     if (res.success) loadUsers();
                 });

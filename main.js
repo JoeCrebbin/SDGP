@@ -112,6 +112,15 @@ function percentile95(values) {
   return Number(sorted[Math.max(0, Math.min(idx, sorted.length - 1))].toFixed(2));
 }
 
+async function verifyActingUserPassword(plainPassword) {
+  if (!loggedInUserID) return false;
+  const normalized = typeof plainPassword === 'string' ? plainPassword.trim() : '';
+  if (!normalized) return false;
+  const actingUser = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(loggedInUserID);
+  if (!actingUser) return false;
+  return bcrypt.compare(normalized, actingUser.password_hash);
+}
+
 // ============================================================
 
 // Auth handlers - login, register, check session, logout
@@ -123,7 +132,8 @@ ipcMain.handle('auth:check-auth', async () => {
     if(!loggedInUserID) return {
       authenticated: false,
       isAdmin: false,
-      isManager: false
+      isManager: false,
+      userId: null
     };
 
     const adminStatus = await isAdmin(loggedInUserID);
@@ -131,6 +141,7 @@ ipcMain.handle('auth:check-auth', async () => {
 
     return {
       authenticated: true,
+      userId: loggedInUserID,
       isAdmin: adminStatus === true,
       isManager: managerStatus === true
     };
@@ -507,9 +518,12 @@ ipcMain.handle('admin:list-users', async () => {
 });
 
 // approve a pending user so they can actually log in
-ipcMain.handle('admin:approve-user', async (event, { userId, role }) => {
+ipcMain.handle('admin:approve-user', async (event, { userId, role, actingPassword }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
+    const passwordOk = await verifyActingUserPassword(actingPassword);
+    if (!passwordOk) return { success: false, message: 'Password confirmation failed' };
+
     const requesterIsManager = await isManager(loggedInUserID);
     const targetRole = normalizeRole(role);
     if (targetRole === 'admin' && !requesterIsManager) {
@@ -529,9 +543,18 @@ ipcMain.handle('admin:approve-user', async (event, { userId, role }) => {
   }
 });
 
-ipcMain.handle('admin:update-user-role', async (event, { userId, role }) => {
+ipcMain.handle('admin:update-user-role', async (event, { userId, role, actingPassword }) => {
   try {
     if (!loggedInUserID || !(await isAdmin(loggedInUserID))) return { success: false, message: 'Unauthorized' };
+    const targetUserId = Number(userId);
+    if (!Number.isFinite(targetUserId)) return { success: false, message: 'Invalid user ID' };
+    if (targetUserId === Number(loggedInUserID)) {
+      return { success: false, message: 'You cannot change your own role' };
+    }
+
+    const passwordOk = await verifyActingUserPassword(actingPassword);
+    if (!passwordOk) return { success: false, message: 'Password confirmation failed' };
+
     const requesterIsManager = await isManager(loggedInUserID);
     const targetRole = normalizeRole(role);
 
@@ -542,15 +565,15 @@ ipcMain.handle('admin:update-user-role', async (event, { userId, role }) => {
       return { success: false, message: 'Only managers can assign Manager role' };
     }
 
-    const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId);
+    const targetUser = db.prepare('SELECT id, role FROM users WHERE id = ?').get(targetUserId);
     if (!targetUser) return { success: false, message: 'User not found' };
     if (normalizeRole(targetUser.role) === 'manager' && !requesterIsManager) {
       return { success: false, message: 'Only managers can modify manager accounts' };
     }
 
     const isAdminFlag = targetRole === 'admin' || targetRole === 'manager' ? 1 : 0;
-    db.prepare('UPDATE users SET role = ?, is_admin = ? WHERE id = ?').run(targetRole, isAdminFlag, userId);
-    logActivity(loggedInUserID, 'update_user_role', `User ID ${userId} role changed to ${targetRole}`);
+    db.prepare('UPDATE users SET role = ?, is_admin = ? WHERE id = ?').run(targetRole, isAdminFlag, targetUserId);
+    logActivity(loggedInUserID, 'update_user_role', `User ID ${targetUserId} role changed to ${targetRole}`);
     return { success: true };
   } catch (err) {
     console.error('Admin Update User Role Error:', err);

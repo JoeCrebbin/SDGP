@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 continue;
             }
 
-            const duplicateKey = `${itemNumber}::${nestId}::${lengthMm}::${beamTypeMm}::${i}`;
+            const duplicateKey = `${itemNumber}::${nestId}::${lengthMm}::${beamTypeMm}`;
             if (seenKeys.has(duplicateKey)) {
                 rejections.push({ row: i + 1, reason: 'Duplicate component row detected' });
                 continue;
