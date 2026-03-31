@@ -18,8 +18,57 @@ document.addEventListener('DOMContentLoaded', () => {
     const msg = document.getElementById('message');
     const submitBtn = document.getElementById('btn-submit');
     const resultsSection = document.getElementById('results-section');
+    const validationReportEl = document.getElementById('validation-report');
 
     let csvContent = null; // Stores the raw CSV text after file is read
+    let lastValidationReport = null;
+    let lastCleanedCsv = '';
+
+    function parseCsvLine(line) {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                    current += '"';
+                    i += 1;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+                continue;
+            }
+
+            if (ch === ',' && !inQuotes) {
+                values.push(current.trim());
+                current = '';
+                continue;
+            }
+
+            current += ch;
+        }
+
+        if (inQuotes) {
+            throw new Error('Malformed CSV row: unmatched quote detected');
+        }
+
+        values.push(current.trim());
+        return values;
+    }
+
+    function buildValidationReportHtml(report) {
+        if (!report) return '';
+        const head = `<strong>Validation:</strong> ${report.acceptedRows} accepted, ${report.rejectedRows} rejected (total ${report.totalRows}).`;
+        if (!report.rejections.length) return head;
+
+        const rows = report.rejections.slice(0, 12)
+            .map((r) => `<li>Row ${r.row}: ${escapeHtml(r.reason)}</li>`)
+            .join('');
+        const more = report.rejections.length > 12 ? `<li>...and ${report.rejections.length - 12} more</li>` : '';
+        return `${head}<ul style="margin:6px 0 0 16px;">${rows}${more}</ul>`;
+    }
 
     // ---- Load Global Settings Defaults ----
     // Pre-fill kerf and min remnant from admin-configured global settings
@@ -53,9 +102,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = (e) => {
             csvContent = e.target.result;
+            if (!csvContent || !csvContent.trim()) {
+                msg.textContent = 'CSV is empty. Please upload a valid file.';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+
             // Parse the first line to get column names
             const firstline = csvContent.split('\n')[0];
-            const columns = firstline.split(',').map(col => col.trim());
+            let columns = [];
+            try {
+                columns = parseCsvLine(firstline);
+            } catch (err) {
+                msg.textContent = err.message || 'Malformed CSV header row.';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+
             // Populate each mapping dropdown with the CSV column names
             mappingSelects.forEach(select => {
                 select.innerHTML = '<option value="">-- Select Column --</option>';
@@ -69,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             settingsSection.style.display = 'block'; // Show the settings panel
             msg.textContent = 'File inspected. Configure settings below.';
             msg.style.color = 'var(--success)';
+            validationReportEl.innerHTML = '';
         };
         inspectBtn.disabled = true;
         reader.readAsText(file);
@@ -77,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ---- Run Optimisation ----
     submitBtn.addEventListener('click', async () => {
         if (!csvContent) { msg.textContent = 'Please inspect a file first.'; msg.style.color = 'var(--danger)'; return; }
+        const validationStart = performance.now();
 
         // Gather all user inputs
         const batchName = document.getElementById('batch-name').value.trim();
@@ -91,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const mapTotalLength = document.getElementById('map-total-length').value;
         const mapMaterial = document.getElementById('map-material').value;
         const mapOldWaste = document.getElementById('map-old-waste').value;
+        const priority = document.getElementById('priority').value;
 
         // Validate required mappings (material group is optional)
         if (!mapId || !mapLength || !mapTotalLength) { msg.textContent = 'Please map Component ID, Length, and Raw Beam Size.'; msg.style.color = 'var(--danger)'; return; }
@@ -113,16 +179,70 @@ document.addEventListener('DOMContentLoaded', () => {
         const startRow = hasHeaders ? 1 : 0; // Skip header row if present
         const components = [];
         const oldWasteData = {};
+        const rejections = [];
+        const seenKeys = new Set();
+        const maxBeamMm = 13000;
+        let headerColCount = null;
+        if (hasHeaders) {
+            try {
+                headerColCount = parseCsvLine(lines[0]).length;
+            } catch (err) {
+                msg.textContent = err.message || 'Malformed CSV header row.';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+        }
 
         for (let i = startRow; i < lines.length; i++) {
-            const cols = lines[i].split(',').map(c => c.trim());
+            let cols;
+            try {
+                cols = parseCsvLine(lines[i]);
+            } catch (err) {
+                rejections.push({ row: i + 1, reason: 'Malformed CSV row (quote/comma parsing error)' });
+                continue;
+            }
+
+            if (headerColCount !== null && cols.length !== headerColCount) {
+                rejections.push({ row: i + 1, reason: `Malformed row: expected ${headerColCount} columns but found ${cols.length}` });
+                continue;
+            }
+
             const itemNumber = cols[parseInt(mapId)] || '';
             const rawLength = parseFloat(cols[parseInt(mapLength)]);
             const rawBeamType = parseFloat(cols[parseInt(mapTotalLength)]);
             // If material group is mapped, use it to group components; otherwise all go in one group
             const nestId = mapMaterial ? (cols[parseInt(mapMaterial)] || 'default') : 'all';
-            if (!itemNumber || isNaN(rawLength) || rawLength <= 0) continue; // Skip invalid rows
-            components.push({ itemNumber, lengthMm: rawLength * multiplier, beamType: isNaN(rawBeamType) ? 0 : rawBeamType * multiplier, nestId });
+
+            if (!itemNumber) {
+                rejections.push({ row: i + 1, reason: 'Missing required Component ID' });
+                continue;
+            }
+
+            if (isNaN(rawLength) || rawLength <= 0) {
+                rejections.push({ row: i + 1, reason: 'Invalid Component Length (must be > 0)' });
+                continue;
+            }
+
+            if (isNaN(rawBeamType) || rawBeamType <= 0) {
+                rejections.push({ row: i + 1, reason: 'Invalid Raw Beam Size (must be > 0)' });
+                continue;
+            }
+
+            const lengthMm = rawLength * multiplier;
+            const beamTypeMm = rawBeamType * multiplier;
+            if (lengthMm > maxBeamMm || beamTypeMm > maxBeamMm) {
+                rejections.push({ row: i + 1, reason: `Range check failed (max supported beam length is ${maxBeamMm}mm)` });
+                continue;
+            }
+
+            const duplicateKey = `${itemNumber}::${nestId}::${lengthMm}`;
+            if (seenKeys.has(duplicateKey)) {
+                rejections.push({ row: i + 1, reason: 'Duplicate component row detected' });
+                continue;
+            }
+            seenKeys.add(duplicateKey);
+
+            components.push({ itemNumber, lengthMm, beamType: beamTypeMm, nestId });
             // If an old waste column is mapped, store it for comparison charts
             if (mapOldWaste !== '') {
                 const oldVal = parseFloat(cols[parseInt(mapOldWaste)]);
@@ -130,7 +250,29 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        lastValidationReport = {
+            totalRows: Math.max(0, lines.length - startRow),
+            acceptedRows: components.length,
+            rejectedRows: rejections.length,
+            rejections,
+            validationDurationMs: Number((performance.now() - validationStart).toFixed(2))
+        };
+        validationReportEl.innerHTML = buildValidationReportHtml(lastValidationReport);
+
         if (components.length === 0) { msg.textContent = 'No valid components found. Check your column mappings.'; msg.style.color = 'var(--danger)'; return; }
+
+        if (rejections.length > 0) {
+            const proceed = window.confirm(`Validation found ${rejections.length} rejected rows. Continue with ${components.length} accepted rows?`);
+            if (!proceed) {
+                msg.textContent = 'Optimisation cancelled. Fix CSV issues and try again.';
+                msg.style.color = 'var(--danger)';
+                return;
+            }
+        }
+
+        const cleanedHeaders = ['ItemNumber', 'NestID', 'Length_mm', 'BeamType_mm'];
+        const cleanedRows = components.map((c) => `${c.itemNumber},${c.nestId},${c.lengthMm},${c.beamType}`);
+        lastCleanedCsv = [cleanedHeaders.join(','), ...cleanedRows].join('\n');
 
         // Show loading state and disable the button to prevent double-clicks
         msg.textContent = `Running optimisation on ${components.length} components...`;
@@ -139,7 +281,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             // Call the main process to run the algorithm in a worker thread
-            const response = await window.optimiseAPI.run({ batchName, components, kerfMm, minRemnantMm, oldWasteData });
+            const response = await window.optimiseAPI.run({
+                batchName,
+                components,
+                kerfMm,
+                minRemnantMm,
+                priority,
+                oldWasteData,
+                validationReport: lastValidationReport
+            });
             if (response.success) {
                 displayResults(response.result);
                 msg.textContent = `Optimisation complete! Solver: ${response.result.solver}`;
@@ -191,6 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="stat-label">Waste Percentage</p>
                 </div>
             </div>
+            <div style="margin: 8px 0 14px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="secondary-btn" id="btn-secure-export">Secure Export Package</button>
+            </div>
         `);
 
         // Visual cutting layout (coloured bars showing components on beams)
@@ -209,13 +362,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <h3 style="margin-top:0;">Waste Comparison</h3>
                 <div class="chart-controls">
                     <label for="chart-type" style="font-size:13px; font-weight:500;">Chart type:</label>
-                    <select id="chart-type" style="width:auto;">
+                    <select id="chart-type" style="width:auto;" aria-label="Waste chart type">
                         <option value="overview-bar">Overall Comparison (mm)</option>
                         <option value="overview-pie">Material Utilisation (Pie)</option>
                         <option value="overview-doughnut">Material Utilisation (Doughnut)</option>
                         <option value="nest-bar">Per-Nest Waste (Top 15)</option>
                     </select>
-                    <button class="secondary-btn" id="btn-download-chart-pdf">Download Chart as PDF</button>
+                    <button class="secondary-btn" id="btn-download-chart-pdf" aria-label="Download waste chart as PDF">Download Chart as PDF</button>
                 </div>
                 <div class="chart-container" style="height:360px;">
                     <canvas id="waste-chart"></canvas>
@@ -231,6 +384,54 @@ document.addEventListener('DOMContentLoaded', () => {
         // Wire up CSV download button
         const dlBtn = document.getElementById('btn-download-csv');
         if (dlBtn) dlBtn.addEventListener('click', () => downloadCsv(result.csvContent, result.batchName));
+
+        const exportBtn = document.getElementById('btn-secure-export');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', async () => {
+                if (!window.exportAPI || !window.exportAPI.securePackage) {
+                    alert('Secure export API is not available.');
+                    return;
+                }
+
+                const pw1 = window.prompt('Enter export password (min 8 chars):');
+                if (!pw1) return;
+                const pw2 = window.prompt('Confirm export password:');
+                if (pw1 !== pw2) {
+                    alert('Passwords do not match.');
+                    return;
+                }
+
+                if (pw1.length < 8) {
+                    alert('Password must be at least 8 characters.');
+                    return;
+                }
+
+                const chartCanvas = document.getElementById('waste-chart');
+                const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
+
+                const response = await window.exportAPI.securePackage({
+                    batchName: result.batchName,
+                    password: pw1,
+                    cleanedCsv: lastCleanedCsv,
+                    validationReport: lastValidationReport,
+                    optimisationSummary: {
+                        solver: result.solver,
+                        priority: result.priority,
+                        grandWastePct: result.grandWastePct,
+                        grandTotalWasteMm: result.grandTotalWasteMm,
+                        grandTotalBeams: result.grandTotalBeams
+                    },
+                    chartImageBase64
+                });
+
+                if (!response.success) {
+                    alert(response.message || 'Secure export failed.');
+                    return;
+                }
+
+                alert(`Secure export created: ${response.filename}\nIntegrity SHA-256: ${response.integritySha256}`);
+            });
+        }
     }
 
     // ============================================================
@@ -405,7 +606,7 @@ ${html}
         if (result.csvContent) {
             const lines = result.csvContent.split('\n').filter(l => l.trim());
             if (lines.length > 1) {
-                const headers = lines[0].split(',');
+                const headers = parseCsvLine(lines[0]);
                 const oldWasteIdx = headers.indexOf('OldWaste_mm');
                 const beamIndexIdx = headers.indexOf('BeamIndex');
                 const nestIdx = headers.indexOf('NestID');
@@ -419,7 +620,7 @@ ${html}
                 const nestMap = {};
 
                 for (let i = 1; i < lines.length; i++) {
-                    const cells = lines[i].split(',');
+                    const cells = parseCsvLine(lines[i]);
                     const bi = cells[beamIndexIdx];
                     const beamLen = parseFloat(cells[beamIdx]) || 0;
                     const waste = parseFloat(cells[wasteIdx]) || 0;
@@ -605,12 +806,12 @@ ${html}
     function buildCsvViewer(csvContent, batchName) {
         const lines = csvContent.split('\n').filter(l => l.trim());
         if (lines.length === 0) return '';
-        const headers = lines[0].split(',');
+        const headers = parseCsvLine(lines[0]);
         let tableHtml = '<thead><tr>';
         for (const h of headers) tableHtml += `<th>${escapeHtml(h)}</th>`;
         tableHtml += '</tr></thead><tbody>';
         for (let i = 1; i < lines.length; i++) {
-            const cells = lines[i].split(',');
+            const cells = parseCsvLine(lines[i]);
             tableHtml += '<tr>';
             for (const c of cells) tableHtml += `<td>${escapeHtml(c)}</td>`;
             tableHtml += '</tr>';

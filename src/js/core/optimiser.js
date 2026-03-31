@@ -74,7 +74,10 @@ function pickLargestStockLength(stockLengths, requiredMm) {
  */
 function packBestFitDecreasing(components, stockLengths, kerfMm) {
   // Sort components longest-first for better packing
-  const sorted = [...components].sort((a, b) => b.lengthMm - a.lengthMm);
+  const sorted = [...components].sort((a, b) => {
+    if (b.lengthMm !== a.lengthMm) return b.lengthMm - a.lengthMm;
+    return String(a.itemNumber).localeCompare(String(b.itemNumber));
+  });
   const beams = [];
 
   for (const comp of sorted) {
@@ -135,7 +138,10 @@ function packBestFitDecreasing(components, stockLengths, kerfMm) {
  * @returns {Object[]} Array of beam objects
  */
 function packFirstFitDecreasing(components, stockLengths, kerfMm) {
-  const sorted = [...components].sort((a, b) => b.lengthMm - a.lengthMm);
+  const sorted = [...components].sort((a, b) => {
+    if (b.lengthMm !== a.lengthMm) return b.lengthMm - a.lengthMm;
+    return String(a.itemNumber).localeCompare(String(b.itemNumber));
+  });
   const beams = [];
 
   for (const comp of sorted) {
@@ -187,10 +193,12 @@ function packFirstFitDecreasing(components, stockLengths, kerfMm) {
  * @param {string} params.priority - 'waste' for BFD or 'speed' for FFD
  * @returns {Object} Full results including per-nest breakdowns and grand totals
  */
-function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
-  // Always use Best-Fit Decreasing — it searches all beams for the tightest fit
-  const packFn = packBestFitDecreasing;
-  const solverName = 'Best-Fit Decreasing (Min Waste)';
+function runOptimisation({ batchName, components, kerfMm, minRemnantMm, priority }) {
+  const priorityMode = priority === 'speed' ? 'speed' : 'waste';
+  const packFn = priorityMode === 'speed' ? packFirstFitDecreasing : packBestFitDecreasing;
+  const solverName = priorityMode === 'speed'
+    ? 'First-Fit Decreasing (Fastest)'
+    : 'Best-Fit Decreasing (Min Waste)';
 
   // Group components by nestId (material type)
   const groups = {};
@@ -225,6 +233,8 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
   let grandTotalCut = 0;
   let grandTotalWaste = 0;
   let grandTotalBeams = 0;
+  let grandReusableRemnantMm = 0;
+  let grandDiscardedWasteMm = 0;
 
   for (const [nestId, nestComponents] of Object.entries(groups)) {
     const beams = packFn(nestComponents, stockLengths, kerfMm);
@@ -237,6 +247,12 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
       totalStock += beam.stockLengthMm;
       totalCut += beam.components.reduce((sum, c) => sum + c.lengthMm, 0);
       totalWaste += beam.wasteMm;
+
+      if (beam.wasteMm >= minRemnantMm) {
+        grandReusableRemnantMm += beam.wasteMm;
+      } else {
+        grandDiscardedWasteMm += beam.wasteMm;
+      }
     }
 
     batchResults.push({
@@ -257,10 +273,13 @@ function runOptimisation({ batchName, components, kerfMm, minRemnantMm }) {
   return {
     batchName,
     solver: solverName,
+    priority: priorityMode,
     results: batchResults,
     grandTotalStockMm: grandTotalStock,
     grandTotalCutMm: grandTotalCut,
     grandTotalWasteMm: grandTotalWaste,
+    grandReusableRemnantMm,
+    grandDiscardedWasteMm,
     grandTotalBeams,
     grandWastePct: grandTotalStock > 0 ? (grandTotalWaste / grandTotalStock) * 100 : 0
   };

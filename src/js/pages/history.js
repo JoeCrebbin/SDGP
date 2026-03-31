@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const detailSection = document.getElementById('detail-section');
     const searchInput = document.getElementById('history-search');
     const searchBtn = document.getElementById('history-search-btn');
+    let trendPoints = [];
 
     /**
      * Load batches from the backend and render the history table.
@@ -32,8 +33,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (response.batches.length === 0) {
                 historyBody.innerHTML = '<tr><td colspan="4">No past optimisations found.</td></tr>';
+                trendPoints = [];
                 return;
             }
+
+            trendPoints = [...response.batches]
+                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+                .map((b) => ({ id: b.id, batch_name: b.batch_name, created_at: b.created_at, waste: b.total_wastage_percent }));
 
             // Build table rows for each batch
             historyBody.innerHTML = '';
@@ -124,13 +130,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <h3 style="margin-top:0;">Waste Comparison</h3>
                         <div class="chart-controls">
                             <label for="chart-type" style="font-size:13px; font-weight:500;">Chart type:</label>
-                            <select id="chart-type" style="width:auto;">
+                            <select id="chart-type" style="width:auto;" aria-label="History chart type">
                                 <option value="overview-bar">Overall Comparison</option>
                                 <option value="overview-pie">Material Utilisation (Pie)</option>
                                 <option value="overview-doughnut">Material Utilisation (Doughnut)</option>
                                 <option value="nest-bar">Per-Nest Waste (Top 15)</option>
+                                <option value="trend-line">Run History Trend</option>
                             </select>
-                            <button class="secondary-btn" id="btn-download-chart-pdf">Download Chart as PDF</button>
+                            <button class="secondary-btn" id="btn-download-chart-pdf" aria-label="Download history chart as PDF">Download Chart as PDF</button>
+                            <button class="secondary-btn" id="btn-secure-export-history" aria-label="Create secure encrypted export package">Secure Export Package</button>
                         </div>
                         <div class="chart-container" style="height:360px;">
                             <canvas id="history-chart"></canvas>
@@ -141,6 +149,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                 buildChart(chartData, 'history-chart');
                 document.getElementById('chart-type').addEventListener('change', () => buildChart(chartData, 'history-chart'));
                 document.getElementById('btn-download-chart-pdf').addEventListener('click', () => downloadChartAsPdf('history-chart'));
+
+                const secureBtn = document.getElementById('btn-secure-export-history');
+                if (secureBtn) {
+                    secureBtn.addEventListener('click', async () => {
+                        if (!window.exportAPI || !window.exportAPI.securePackage) {
+                            alert('Secure export API is not available.');
+                            return;
+                        }
+                        const pw1 = window.prompt('Enter export password (min 8 chars):');
+                        if (!pw1) return;
+                        const pw2 = window.prompt('Confirm export password:');
+                        if (pw1 !== pw2) return alert('Passwords do not match.');
+                        if (pw1.length < 8) return alert('Password must be at least 8 characters.');
+
+                        const chartCanvas = document.getElementById('history-chart');
+                        const chartImageBase64 = chartCanvas ? chartCanvas.toDataURL('image/png', 1.0) : null;
+
+                        const exportRes = await window.exportAPI.securePackage({
+                            batchName: batch.batch_name || 'batch',
+                            password: pw1,
+                            cleanedCsv: csvContent,
+                            validationReport: null,
+                            optimisationSummary: {
+                                wastePct: batch.total_wastage_percent,
+                                createdAt: batch.created_at
+                            },
+                            chartImageBase64
+                        });
+
+                        if (!exportRes.success) return alert(exportRes.message || 'Secure export failed.');
+                        alert(`Secure export created: ${exportRes.filename}`);
+                    });
+                }
             } else {
                 detailSection.insertAdjacentHTML('beforeend', '<div class="card"><p>No CSV data available for this batch.</p></div>');
             }
@@ -171,7 +212,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             totalWasteMm: 0,
             totalCutMm: 0,
             oldWastePct: null,
-            nests: []
+            nests: [],
+            trend: trendPoints
         };
 
         const lines = csvContent.split('\n').filter(l => l.trim());
@@ -374,6 +416,36 @@ document.addEventListener('DOMContentLoaded', async () => {
                     },
                     scales: {
                         x: { beginAtZero: true, title: { display: true, text: 'Waste %' } }
+                    }
+                }
+            };
+        } else if (chartType === 'trend-line') {
+            config = {
+                type: 'line',
+                data: {
+                    labels: chartData.trend.map((p) => {
+                        const dt = new Date(p.created_at);
+                        return Number.isNaN(dt.getTime()) ? String(p.batch_name || p.id) : dt.toLocaleDateString();
+                    }),
+                    datasets: [{
+                        label: 'Waste % Over Time',
+                        data: chartData.trend.map((p) => Number(p.waste || 0).toFixed(2)),
+                        fill: false,
+                        borderColor: 'rgba(0, 120, 212, 1)',
+                        backgroundColor: 'rgba(0, 120, 212, 0.2)',
+                        tension: 0.25,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Run History Waste Trend' }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Waste %' } }
                     }
                 }
             };

@@ -38,7 +38,16 @@ contextBridge.exposeInMainWorld('settingsAPI', {
 contextBridge.exposeInMainWorld('historyAPI', {
   list: () => ipcRenderer.invoke('history:list'),
   detail: (batchId) => ipcRenderer.invoke('history:detail', { batchId }),
-  search: (search) => ipcRenderer.invoke('history:search', { search })
+  search: (search) => ipcRenderer.invoke('history:search', { search }),
+  trend: () => ipcRenderer.invoke('history:trend')
+});
+
+contextBridge.exposeInMainWorld('exportAPI', {
+  securePackage: (payload) => ipcRenderer.invoke('export:secure-package', payload)
+});
+
+contextBridge.exposeInMainWorld('nfrAPI', {
+  performanceReport: () => ipcRenderer.invoke('nfr:performance-report')
 });
 
 // User account management - password change and account deletion

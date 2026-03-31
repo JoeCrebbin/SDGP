@@ -14,6 +14,8 @@ const bcrypt = require('bcryptjs');   // Used for hashing and comparing password
 const path = require('path');
 const fs = require('fs');
 const { Worker } = require('worker_threads'); // Lets us run heavy tasks off the main thread
+const { buildEncryptedExport } = require('./src/js/core/secure_export.js');
+const { ALGORITHM_VERSION, PERF_TARGETS_MS_P95, bucketByRows } = require('./src/js/core/nfr_contracts.js');
 
 // Safety check - this file only works when run through Electron
 if (!process.versions || !process.versions.electron) {
@@ -71,6 +73,28 @@ function logActivity(userId, action, detail) {
     const email = user ? user.email : 'unknown';
     db.prepare('INSERT INTO activity_logs (user_id, user_email, action, detail) VALUES (?, ?, ?, ?)').run(userId, email, action, detail);
   } catch (e) { console.error('Log error:', e); }
+}
+
+function nowMs() {
+  return Number(process.hrtime.bigint()) / 1000000;
+}
+
+function recordPerformance(stage, rowCount, durationMs, success) {
+  try {
+    db.prepare(
+      `INSERT INTO performance_metrics (stage, size_bucket, row_count, duration_ms, success)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(stage, bucketByRows(rowCount), rowCount, durationMs, success ? 1 : 0);
+  } catch (e) {
+    console.error('Performance record error:', e.message);
+  }
+}
+
+function percentile95(values) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.ceil(0.95 * sorted.length) - 1;
+  return Number(sorted[Math.max(0, Math.min(idx, sorted.length - 1))].toFixed(2));
 }
 
 // ============================================================
@@ -178,13 +202,16 @@ ipcMain.handle('auth:register', async (event, { email, password }) => {
 // a reference in the database.
 // ============================================================
 
-ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, minRemnantMm, oldWasteData }) => {
+ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, minRemnantMm, priority, oldWasteData, validationReport }) => {
+  const optimisationStart = nowMs();
   try {
     if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
     if (!components || components.length === 0) return { success: false, message: 'No components provided' };
 
-    // Run the BFD algorithm in a worker thread
-    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: 'waste' });
+    const priorityMode = priority === 'speed' ? 'speed' : 'waste';
+
+    // Run the selected algorithm in a worker thread
+    const result = await runOptimisationAsync({ batchName, components, kerfMm, minRemnantMm, priority: priorityMode });
 
     // Build the output CSV with one row per component, showing which beam it was assigned to
     const csvRows = ['ItemNumber,NestID,Length_mm,AssignedBeam_mm,BeamIndex,WasteOnBeam_mm,OldWaste_mm'];
@@ -211,18 +238,52 @@ ipcMain.handle('optimise:run', async (event, { batchName, components, kerfMm, mi
 
     // Store batch metadata in the database (we save the file path, not the whole CSV)
     const insertBatch = db.prepare(
-      'INSERT INTO batches (user_id, batch_name, total_wastage_percent, output_csv_path) VALUES (?, ?, ?, ?)'
+      `INSERT INTO batches (
+        user_id, batch_name, solver_name, algorithm_version, priority_mode, kerf_mm, min_remnant_mm,
+        total_components, accepted_components, rejected_components, metrics_json,
+        total_wastage_percent, output_csv_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
-    const batchInfo = insertBatch.run(loggedInUserID, batchName, result.grandWastePct, csvPath);
+    const metricsJson = JSON.stringify({
+      grandTotalBeams: result.grandTotalBeams,
+      grandTotalStockMm: result.grandTotalStockMm,
+      grandTotalCutMm: result.grandTotalCutMm,
+      grandTotalWasteMm: result.grandTotalWasteMm,
+      results: result.results,
+      validationReport: validationReport || null
+    });
+
+    const batchInfo = insertBatch.run(
+      loggedInUserID,
+      batchName,
+      result.solver || null,
+      ALGORITHM_VERSION,
+      priorityMode,
+      kerfMm,
+      minRemnantMm,
+      validationReport?.totalRows ?? components.length,
+      validationReport?.acceptedRows ?? components.length,
+      validationReport?.rejectedRows ?? 0,
+      metricsJson,
+      result.grandWastePct,
+      csvPath
+    );
     const batchId = Number(batchInfo.lastInsertRowid);
     result.batchId = batchId;
+    result.algorithmVersion = ALGORITHM_VERSION;
     result.csvContent = csvContent;  // Send the CSV back to the renderer for display
     logActivity(loggedInUserID, 'optimisation', batchName);
+
+    if (typeof validationReport?.validationDurationMs === 'number') {
+      recordPerformance('validation', validationReport.totalRows ?? components.length, validationReport.validationDurationMs, true);
+    }
+    recordPerformance('optimization', validationReport?.totalRows ?? components.length, nowMs() - optimisationStart, true);
 
     return { success: true, result };
   } catch (err) {
     console.error('Optimisation Error:', err);
+    recordPerformance('optimization', validationReport?.totalRows ?? components?.length ?? 0, nowMs() - optimisationStart, false);
     return { success: false, message: err.message || 'Optimisation failed' };
   }
 });
@@ -285,6 +346,102 @@ ipcMain.handle('history:search', async (event, { search }) => {
   } catch (err) {
     console.error('History Search Error:', err);
     return { success: false, message: 'Failed to search history' };
+  }
+});
+
+ipcMain.handle('history:trend', async () => {
+  try {
+    if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
+    const rows = db.prepare(
+      `SELECT id, batch_name, total_wastage_percent, created_at
+       FROM batches
+       WHERE user_id = ?
+       ORDER BY created_at ASC`
+    ).all(loggedInUserID);
+    return { success: true, points: rows };
+  } catch (err) {
+    console.error('History Trend Error:', err);
+    return { success: false, message: 'Failed to load trend data' };
+  }
+});
+
+ipcMain.handle('nfr:performance-report', async () => {
+  try {
+    if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
+    const rows = db.prepare(
+      `SELECT stage, size_bucket, duration_ms
+       FROM performance_metrics
+       WHERE success = 1
+       ORDER BY created_at DESC
+       LIMIT 3000`
+    ).all();
+
+    const grouped = {};
+    for (const row of rows) {
+      const key = `${row.stage}:${row.size_bucket}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(Number(row.duration_ms));
+    }
+
+    const report = [];
+    for (const [key, vals] of Object.entries(grouped)) {
+      const [stage, size] = key.split(':');
+      report.push({
+        stage,
+        size,
+        samples: vals.length,
+        p95Ms: percentile95(vals),
+        targetMs: PERF_TARGETS_MS_P95[stage]?.[size] ?? null
+      });
+    }
+
+    return { success: true, targets: PERF_TARGETS_MS_P95, report };
+  } catch (err) {
+    console.error('NFR Performance Report Error:', err);
+    return { success: false, message: 'Failed to generate performance report' };
+  }
+});
+
+ipcMain.handle('export:secure-package', async (event, payload) => {
+  const exportStart = nowMs();
+  let exportSucceeded = false;
+  try {
+    if (!loggedInUserID) return { success: false, message: 'Not authenticated' };
+    const password = typeof payload?.password === 'string' ? payload.password : '';
+    if (password.length < 8) {
+      return { success: false, message: 'Export password must be at least 8 characters' };
+    }
+
+    const safeBatch = String(payload?.batchName || 'batch').replace(/[^a-zA-Z0-9_-]/g, '_') || 'batch';
+    const exportData = {
+      generatedAt: new Date().toISOString(),
+      generatedByUserId: loggedInUserID,
+      batchName: payload?.batchName || safeBatch,
+      cleanedCsv: payload?.cleanedCsv || '',
+      validationReport: payload?.validationReport || null,
+      optimisationSummary: payload?.optimisationSummary || null,
+      chartImageBase64: payload?.chartImageBase64 || null,
+      trendImageBase64: payload?.trendImageBase64 || null
+    };
+
+    const encrypted = buildEncryptedExport(exportData, password);
+    const filename = `${safeBatch}_${Date.now()}_secure_export.gve`;
+    const filePath = path.join(outputDir, filename);
+    fs.writeFileSync(filePath, JSON.stringify(encrypted, null, 2), 'utf8');
+    logActivity(loggedInUserID, 'secure_export', filename);
+
+    exportSucceeded = true;
+    return {
+      success: true,
+      filePath,
+      filename,
+      integritySha256: encrypted.integritySha256
+    };
+  } catch (err) {
+    console.error('Secure Export Error:', err);
+    return { success: false, message: `Failed to create secure export package: ${err.message || 'unknown error'}` };
+  } finally {
+    recordPerformance('export', payload?.validationReport?.totalRows ?? 0, nowMs() - exportStart, exportSucceeded);
   }
 });
 

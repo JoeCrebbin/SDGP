@@ -23,7 +23,8 @@ const path = require('path');
 
 // Create (or open) the SQLite database file
 const dbPath = path.join(__dirname, 'grant_vessels.db');
-const db = new Database(dbPath, { verbose: console.log });
+const enableSqlDebug = process.env.SDGP_SQL_DEBUG === '1';
+const db = new Database(dbPath, { verbose: enableSqlDebug ? console.log : undefined });
 
 // Create all tables using IF NOT EXISTS so this is safe to run multiple times
 db.exec(`
@@ -39,6 +40,15 @@ db.exec(`
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         batch_name TEXT,
+        solver_name TEXT,
+        algorithm_version TEXT,
+        priority_mode TEXT,
+        kerf_mm REAL,
+        min_remnant_mm REAL,
+        total_components INTEGER,
+        accepted_components INTEGER,
+        rejected_components INTEGER,
+        metrics_json TEXT,
         total_wastage_percent REAL,
         output_csv_path TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -75,6 +85,16 @@ db.exec(`
         key TEXT PRIMARY KEY,
         value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS performance_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stage TEXT,
+        size_bucket TEXT,
+        row_count INTEGER,
+        duration_ms REAL,
+        success INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 `);
 
 // ---- Migrations ----
@@ -91,6 +111,60 @@ try {
     db.prepare('SELECT output_csv_path FROM batches LIMIT 1').get();
 } catch (e) {
     db.exec('ALTER TABLE batches ADD COLUMN output_csv_path TEXT');
+}
+
+try {
+    db.prepare('SELECT solver_name FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN solver_name TEXT');
+}
+
+try {
+    db.prepare('SELECT priority_mode FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN priority_mode TEXT');
+}
+
+try {
+    db.prepare('SELECT algorithm_version FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN algorithm_version TEXT');
+}
+
+try {
+    db.prepare('SELECT kerf_mm FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN kerf_mm REAL');
+}
+
+try {
+    db.prepare('SELECT min_remnant_mm FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN min_remnant_mm REAL');
+}
+
+try {
+    db.prepare('SELECT total_components FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN total_components INTEGER');
+}
+
+try {
+    db.prepare('SELECT accepted_components FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN accepted_components INTEGER');
+}
+
+try {
+    db.prepare('SELECT rejected_components FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN rejected_components INTEGER');
+}
+
+try {
+    db.prepare('SELECT metrics_json FROM batches LIMIT 1').get();
+} catch (e) {
+    db.exec('ALTER TABLE batches ADD COLUMN metrics_json TEXT');
 }
 
 // ---- Seed Data ----

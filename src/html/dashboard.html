@@ -16,7 +16,7 @@
           <input type="file" id="csv-file" accept=".csv">
           <button id="inspect-btn" class="secondary-btn" disabled>Inspect File</button>
         </div>
-        <p class="message" id="message"></p>
+        <p class="message" id="message" role="status" aria-live="polite"></p>
       </div>
 
       <section id="optimisation-settings" style="display:none;">
@@ -100,9 +100,17 @@
               </select>
               <small>Map this to compare our optimisation against the original cutting plan.</small>
             </div>
+            <div class="form-group">
+              <label for="priority">Optimisation Priority</label>
+              <select id="priority">
+                <option value="waste">Minimum Material Waste (BFD)</option>
+                <option value="speed">Fastest Cutting Setup (FFD)</option>
+              </select>
+            </div>
           </div>
 
           <button id="btn-submit" class="primary-btn" style="margin-top:8px;">Run Optimisation</button>
+          <div id="validation-report" class="message" role="status" aria-live="polite" style="margin-top:10px;"></div>
         </div>
       </section>
 
