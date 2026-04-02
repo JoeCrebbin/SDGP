@@ -45,10 +45,10 @@ npm start
 
 ## Default Accounts
 
-| Email | Password | Role |
-|---|---|---|
+| Email                  | Password | Role  |
+| ---------------------- | -------- | ----- |
 | admin@grantvessels.com | password | Admin |
-| user@grantvessels.com | password | User |
+| user@grantvessels.com  | password | User  |
 
 New accounts registered through the app require admin approval before login.
 
@@ -89,3 +89,12 @@ output/                        Generated CSV output files
 - **bcryptjs** - password hashing
 - **Chart.js** - client-side charting
 - **Worker Threads** - non-blocking optimisation
+
+## Troubleshooting
+
+| Issue                               | Solution                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| "No valid components found"         | Check CSV column mapping and row data for missing/invalid values.       |
+| "Required length exceeds max stock" | Components larger than 13000mm cannot be cut; split into smaller parts. |
+| Admin page blank after login        | Ensure your account is approved by an administrator.                    |
+| UI becomes unresponsive during run  | Expected for large batches; optimization runs in background worker.     |
