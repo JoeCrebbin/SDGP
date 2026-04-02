@@ -52,6 +52,32 @@ npm start
 
 New accounts registered through the app require admin approval before login.
 
+## Quick Start Workflow
+
+1. **Prepare CSV**  
+   Ensure your component list has required columns and valid numeric values.
+
+2. **Open Dashboard**  
+   Launch the app and log in with your account.
+
+3. **Upload & Inspect**  
+   Select your CSV file and click **Inspect** to preview headers.
+
+4. **Configure Mappings**  
+   Map your CSV columns to **Component ID**, **Length**, and **Raw Beam Size**.
+
+5. **Set Parameters**  
+   Enter batch name, select units, and configure kerf (saw blade width) and minimum remnant.
+
+6. **Run Optimisation**  
+   Click **Run** to start the algorithm (runs in the background so the UI stays responsive).
+
+7. **Review Results**  
+   View summary stats, cutting layout, waste charts, and downloadable results.
+
+8. **Save & Export**  
+   Download output CSV and charts for reporting.
+
 ## Project Structure
 
 ```
@@ -98,3 +124,41 @@ output/                        Generated CSV output files
 | "Required length exceeds max stock" | Components larger than 13000mm cannot be cut; split into smaller parts. |
 | Admin page blank after login        | Ensure your account is approved by an administrator.                    |
 | UI becomes unresponsive during run  | Expected for large batches; optimization runs in background worker.     |
+
+## Accessibility Features
+
+- **High Contrast Mode**  
+  Toggle for improved visibility; preference persists across sessions.
+
+- **Keyboard Navigation**  
+  All forms and controls accessible via keyboard for users who cannot use mouse input.
+
+- **ARIA Labels**  
+  Key interactive elements include accessibility labels for screen readers.
+
+- **Offline Access**  
+  Full functionality without internet connection; no third-party dependencies for core UI.
+
+## Admin Guide
+
+### User Management
+
+- Review pending registrations in **Manage Users**
+- Approve new accounts before they can log in
+- Delete user accounts (cascades to delete associated data)
+
+### Global Settings
+
+- Configure default kerf width and minimum remnant for all users
+- Changes apply to new dashboard sessions
+
+### System Monitoring
+
+- View activity logs for an audit trail of optimisations, logins, and deletions
+- Search logs by action or user email
+
+### Batch Administration
+
+- View all batches across all users
+- Search by batch name or date
+- Download batch details and CSV outputs for reporting
