@@ -130,6 +130,7 @@ async function setupDashboard() {
 }
 
 test('[FR1] CSV upload and inspect exposes column headers', async () => {
+  // Validates file upload + inspect flow reveals CSV headers for mapping.
   const { window, document, cleanup } = await setupDashboard();
 
   setFileInput(window, document.getElementById('csv-file'), 'input.csv', 'component_id,length,raw_beam_size\\nA1,1000,6000');
@@ -145,6 +146,7 @@ test('[FR1] CSV upload and inspect exposes column headers', async () => {
 });
 
 test('[FR2] Column mapping selectors for required fields exist', () => {
+  // Confirms required mapping controls and user guidance are implemented.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
 
   assert.match(dashboardJs, /map-id/);
@@ -154,6 +156,7 @@ test('[FR2] Column mapping selectors for required fields exist', () => {
 });
 
 test('[FR3] Invalid/missing/negative row validation is enforced', () => {
+  // Ensures validation rejects missing IDs and invalid numeric values.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
 
   assert.match(dashboardJs, /Missing required Component ID/);
@@ -162,6 +165,7 @@ test('[FR3] Invalid/missing/negative row validation is enforced', () => {
 });
 
 test('[FR4] BFD assigns components to standard beam sizes with kerf', () => {
+  // Verifies core optimisation behavior: standard stock snapping + kerf usage.
   const result = runOptimisation({
     batchName: 'FR4',
     kerfMm: 3,
@@ -179,6 +183,7 @@ test('[FR4] BFD assigns components to standard beam sizes with kerf', () => {
 });
 
 test('[FR5] Summary cards include beams, stock, cut, waste, and waste percentage', () => {
+  // Checks required summary KPI labels are present in the dashboard result UI.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
 
   assert.match(dashboardJs, /Beams Used/);
@@ -189,6 +194,7 @@ test('[FR5] Summary cards include beams, stock, cut, waste, and waste percentage
 });
 
 test('[FR6] Visual cutting layout renders beam bars and waste segments', () => {
+  // Confirms visual cutting layout primitives and waste segment rendering exist.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
 
   assert.match(dashboardJs, /buildBeamLayout/);
@@ -197,6 +203,7 @@ test('[FR6] Visual cutting layout renders beam bars and waste segments', () => {
 });
 
 test('[FR7] Waste and utilisation charts are generated with PNG download actions', () => {
+  // Verifies both chart types and native PNG export actions are wired.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
 
   assert.match(dashboardJs, /chart-bar/);
@@ -207,6 +214,7 @@ test('[FR7] Waste and utilisation charts are generated with PNG download actions
 });
 
 test('[FR8] Output CSV with cutting plan schema is downloadable', () => {
+  // Validates CSV download action and required output schema columns.
   const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'src/js/pages/dashboard.js'), 'utf8');
   const mainJs = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -216,6 +224,7 @@ test('[FR8] Output CSV with cutting plan schema is downloadable', () => {
 });
 
 test('[FR9] Registration requires approval and admin can manage users/logs', async () => {
+  // Covers user approval gating plus core admin moderation/log visibility flows.
   const registerCtx = await bootScript({
     html: registerHtml(),
     scriptRelPath: 'src/js/pages/auth.js',
@@ -288,6 +297,7 @@ test('[FR9] Registration requires approval and admin can manage users/logs', asy
 });
 
 test('[FR10] Users can view history details and manage account settings', async () => {
+  // Covers history detail access plus settings actions (change password/delete).
   const { document, cleanup } = await bootScript({
     html: historyHtml(),
     scriptRelPath: 'src/js/pages/history.js',
